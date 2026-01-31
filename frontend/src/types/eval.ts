@@ -1,0 +1,99 @@
+/** Type definitions for evaluation */
+
+export interface ModelInfo {
+  model_code: string
+  display_name: string
+  provider: {
+    id: string
+    name: string
+  }
+}
+
+export interface RequestTemplate {
+  model: string
+  messages: Array<{ role: string; content: string }>
+  [key: string]: any
+}
+
+export interface EvalTaskCreate {
+  set_id: string
+  model_id: string
+  concurrency?: number  // 并发数量，默认1
+  evaluator_types?: string[]
+  request_template?: RequestTemplate
+  system_prompt?: string
+}
+
+export interface EvalTaskUpdate {
+  model_id?: string
+  concurrency?: number  // 并发数量
+  request_template?: RequestTemplate
+  system_prompt?: string
+}
+
+export interface TemplateTestRequest {
+  case_id?: string
+  test_input?: string
+}
+
+export interface TemplateTestResponse {
+  rendered_request: Record<string, any>
+  actual_response?: string
+  error?: string
+}
+
+export interface EvalTask {
+  id: string
+  set_id: string
+  model_id: string
+  concurrency: number  // 并发数量
+  request_template?: RequestTemplate
+  system_prompt?: string
+  model_info?: ModelInfo
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'
+  summary: EvalSummary | null
+  created_at: string
+  updated_at: string
+}
+
+export interface EvalSummary {
+  total: number
+  passed: number
+  failed: number
+  pass_rate: number
+}
+
+export interface EvalResult {
+  id: string
+  run_id: string
+  task_id: string
+  case_id: string
+  case_uid?: string | null  // 用例编号，便于展示
+  actual_output: string | null
+  is_passed: boolean
+  execution_error?: string | null  // 执行错误信息
+  evaluator_logs: EvaluatorLog[]
+  created_at: string
+}
+
+export interface EvalRun {
+  id: string
+  task_id: string
+  run_number: number
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'
+  summary: EvalSummary | null
+  started_at: string
+  completed_at: string | null
+  error: string | null
+}
+
+export interface EvaluatorLog {
+  name: string
+  passed: boolean
+  reason?: string
+}
+
+export interface EvalProgressEvent {
+  type: 'progress' | 'result' | 'complete' | 'error'
+  data: Record<string, any>
+}
