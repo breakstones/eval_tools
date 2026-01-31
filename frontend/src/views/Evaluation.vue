@@ -65,6 +65,12 @@
 
             <!-- Model Selection -->
             <el-form :model="editForm" label-width="80px" size="small">
+              <el-form-item label="任务名称">
+                <el-input v-model="editForm.task_name" placeholder="请输入任务名称" style="width: 100%" />
+              </el-form-item>
+              <el-form-item label="用例集">
+                <div class="readonly-field">{{ currentCaseSet?.name || '-' }}</div>
+              </el-form-item>
               <el-form-item label="模型">
                 <el-select v-model="editForm.model_id" placeholder="选择模型" style="width: 100%" @change="handleModelChange">
                   <el-option-group
@@ -96,6 +102,32 @@
                 />
                 <div style="color: #909399; font-size: 12px; margin-top: 4px">
                   控制并行执行的用例数量，提高评测速度
+                </div>
+              </el-form-item>
+
+              <el-form-item label="评估器">
+                <div class="evaluator-selector">
+                  <div v-if="taskEvaluators.length === 0" class="empty-tips">
+                    使用默认评估器（精确匹配）
+                  </div>
+                  <div v-else class="evaluator-tags">
+                    <el-tag
+                      v-for="(evaluator, index) in taskEvaluators"
+                      :key="evaluator.id"
+                      closable
+                      @close="removeEvaluator(index)"
+                      style="margin-right: 8px; margin-bottom: 8px"
+                    >
+                      {{ evaluator.name }}
+                    </el-tag>
+                  </div>
+                  <el-button
+                    size="small"
+                    @click="showEvaluatorSelector"
+                    :icon="Plus"
+                  >
+                    配置评估器
+                  </el-button>
                 </div>
               </el-form-item>
             </el-form>
@@ -172,16 +204,18 @@
                 >
                   <div class="run-header">
                     <span class="run-number">第 {{ run.run_number }} 次</span>
+                    <span class="run-time">{{ formatTime(run.started_at) }}</span>
                     <el-tag :type="getStatusType(run.status)" size="small">
                       {{ getStatusText(run.status) }}
                     </el-tag>
-                    <span class="run-time">{{ formatTime(run.started_at) }}</span>
                   </div>
                   <div class="run-stats" v-if="run.summary">
-                    <span>总计: {{ run.summary.total }}</span>
-                    <span class="passed">通过: {{ run.summary.passed }}</span>
-                    <span class="failed">失败: {{ run.summary.failed }}</span>
-                    <span>通过率: {{ (run.summary.pass_rate * 100).toFixed(1) }}%</span>
+                    <span class="stat-passed">{{ run.summary.passed }}</span>
+                    <span class="stat-divider">/</span>
+                    <span class="stat-failed">{{ run.summary.failed }}</span>
+                    <span class="stat-divider">/</span>
+                    <span class="stat-total">{{ run.summary.total }}</span>
+                    <span class="stat-rate">{{ run.summary.pass_rate.toFixed(1) }}%</span>
                   </div>
                 </div>
               </div>
@@ -204,7 +238,7 @@
                 </el-statistic>
                 <el-statistic
                   title="通过率"
-                  :value="((evalStore.currentRun.summary?.pass_rate || 0) * 100).toFixed(1) + '%'"
+                  :value="((evalStore.currentRun.summary?.pass_rate || 0)).toFixed(1) + '%'"
                 />
               </div>
               <el-table :data="evalStore.evalResults" stripe size="small" max-height="400">
@@ -224,10 +258,10 @@
                   </template>
                 </el-table-column>
                 <el-table-column prop="actual_output" label="实际输出" show-overflow-tooltip />
-                <el-table-column label="操作" width="80" align="center">
+                <el-table-column label="操作" width="100" align="center">
                   <template #default="{ row }">
                     <el-button link type="primary" size="small" @click="showResultDetail(row)">
-                      详情
+                      详细对比
                     </el-button>
                   </template>
                 </el-table-column>
@@ -244,6 +278,9 @@
     <!-- Create Task Dialog -->
     <el-dialog v-model="taskDialogVisible" title="创建评测任务" width="500px">
       <el-form :model="taskForm" label-width="100px">
+        <el-form-item label="任务名称" required>
+          <el-input v-model="taskForm.name" placeholder="请输入任务名称" style="width: 100%" />
+        </el-form-item>
         <el-form-item label="用例集" required>
           <el-select v-model="taskForm.set_id" placeholder="请选择用例集" style="width: 100%">
             <el-option
@@ -339,44 +376,45 @@
       @close="diffDialogVisible = false"
     />
 
-    <!-- Result Detail Dialog (Compact) -->
-    <el-dialog v-model="detailDialogVisible" title="评测详情" width="600px">
-      <div v-if="currentResult" class="result-detail">
-        <el-descriptions :column="2" border>
-          <el-descriptions-item label="用例ID">{{ currentResult.case_id }}</el-descriptions-item>
-          <el-descriptions-item label="状态">
-            <el-tag :type="currentResult.is_passed ? 'success' : 'danger'">
-              {{ currentResult.is_passed ? '通过' : '失败' }}
-            </el-tag>
-          </el-descriptions-item>
-        </el-descriptions>
-
-        <el-divider>评估器日志</el-divider>
-        <div class="evaluator-logs">
-          <div
-            v-for="(log, index) in currentResult.evaluator_logs"
-            :key="index"
-            class="log-item"
-          >
-            <el-tag :type="log.passed ? 'success' : 'danger'" size="small">
-              {{ log.name }}
-            </el-tag>
-            <span class="log-reason">{{ log.reason || (log.passed ? '通过' : '未通过') }}</span>
-          </div>
+    <!-- Evaluator Selector Dialog -->
+    <el-dialog
+      v-model="evaluatorDialogVisible"
+      title="配置评估器"
+      width="600px"
+      @open="handleEvaluatorDialogOpen"
+    >
+      <div class="evaluator-selector-content">
+        <div class="available-evaluators">
+          <div class="section-title">可用评估器</div>
+          <el-checkbox-group v-model="selectedEvaluatorIds">
+            <div
+              v-for="evaluator in evaluatorStore.evaluators"
+              :key="evaluator.id"
+              class="evaluator-option"
+            >
+              <el-checkbox :label="evaluator.id">
+                <div class="evaluator-option-content">
+                  <span class="evaluator-name">{{ evaluator.name }}</span>
+                  <el-tag
+                    :type="evaluator.type === 'llm_judge' ? 'warning' : 'success'"
+                    size="small"
+                  >
+                    {{ evaluator.type === 'llm_judge' ? 'LLM' : '代码' }}
+                  </el-tag>
+                  <span class="evaluator-desc">{{ evaluator.description || '暂无描述' }}</span>
+                </div>
+              </el-checkbox>
+            </div>
+          </el-checkbox-group>
         </div>
-
-        <el-divider>实际输出</el-divider>
-        <el-input
-          :model-value="currentResult.actual_output"
-          type="textarea"
-          :rows="8"
-          readonly
-        />
-
-        <div style="margin-top: 15px; text-align: center">
-          <el-button type="primary" @click="showDiffViewer">查看详细对比</el-button>
+        <div class="selected-count">
+          已选择 {{ selectedEvaluatorIds.length }} 个评估器
         </div>
       </div>
+      <template #footer>
+        <el-button @click="evaluatorDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveEvaluators">确定</el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -387,25 +425,33 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { useEvalStore } from '@/stores/eval'
 import { useCasesStore } from '@/stores/cases'
+import { useEvaluatorStore } from '@/stores/evaluator'
 import { getModels } from '@/api/models'
 import DiffViewer from '@/components/DiffViewer.vue'
 import type { EvalTask, EvalResult } from '@/types/eval'
 import type { TestCase } from '@/types/cases'
 import type { Model } from '@/api/models'
+import type { TaskEvaluatorInfo } from '@/types/evaluator'
 
 const evalStore = useEvalStore()
 const casesStore = useCasesStore()
+const evaluatorStore = useEvaluatorStore()
 
 // Dialog states
 const taskDialogVisible = ref(false)
-const detailDialogVisible = ref(false)
 const diffDialogVisible = ref(false)
 const testDialogVisible = ref(false)
+const evaluatorDialogVisible = ref(false)
 const currentResult = ref<EvalResult | null>(null)
 const currentCase = ref<TestCase | null>(null)
 
+// Evaluator state
+const taskEvaluators = ref<TaskEvaluatorInfo[]>([])
+const selectedEvaluatorIds = ref<string[]>([])
+
 // Edit state
 const editForm = ref({
+  task_name: '',
   model_id: '',
   concurrency: 1,
   system_prompt: '',
@@ -434,6 +480,7 @@ const currentCaseSet = ref<any>(null)
 
 // Form data
 const taskForm = ref({
+  name: '',
   set_id: '',
   model_id: '',
   evaluator_types: ['exact_match'],
@@ -504,6 +551,9 @@ async function loadModels() {
 }
 
 function getTaskLabel(task: EvalTask): string {
+  if (task.name) {
+    return task.name
+  }
   const cs = casesStore.caseSets.find((c) => c.id === task.set_id)
   const modelName = task.model_info?.display_name || task.model_info?.model_code || '未知模型'
   return `${cs?.name || task.set_id} - ${modelName}`
@@ -557,6 +607,7 @@ async function handleTaskChange(taskId: string) {
 
   // Initialize edit form with current task data
   if (currentTask.value) {
+    editForm.value.task_name = currentTask.value.name || ''
     editForm.value.model_id = currentTask.value.model_id
     editForm.value.concurrency = currentTask.value.concurrency || 1
     editForm.value.templateJson = formatJson(currentTask.value.request_template)
@@ -571,6 +622,9 @@ async function handleTaskChange(taskId: string) {
     // Fetch test cases for testing
     await casesStore.fetchTestCases(currentTask.value.set_id)
     testCases.value = casesStore.testCases
+
+    // Fetch task evaluators
+    await loadTaskEvaluators(taskId)
   }
 
   // Fetch runs and select latest
@@ -598,12 +652,17 @@ function showCreateTaskDialog() {
     ElMessage.warning('请先在模型管理中添加模型')
     return
   }
+  taskForm.value.name = ''
   taskForm.value.set_id = casesStore.caseSets[0].id
   taskForm.value.model_id = availableModels.value[0].id
   taskDialogVisible.value = true
 }
 
 async function handleCreateTask() {
+  if (!taskForm.value.name || taskForm.value.name.trim() === '') {
+    ElMessage.error('请输入任务名称')
+    return
+  }
   if (!taskForm.value.set_id) {
     ElMessage.error('请选择用例集')
     return
@@ -719,12 +778,18 @@ async function saveConfig() {
       requestTemplate = JSON.parse(editForm.value.templateJson)
     }
 
-    // Update: model_id, concurrency, request_template, and system_prompt (as separate field)
-    const updateData = {
+    // Update: name, model_id, concurrency, request_template, and system_prompt (as separate field)
+    const updateData: any = {
       model_id: editForm.value.model_id,
       concurrency: editForm.value.concurrency,
       request_template: requestTemplate,
-      system_prompt: editForm.value.system_prompt || undefined,
+    }
+    // Only include optional fields if they have values
+    if (editForm.value.task_name !== undefined && editForm.value.task_name !== null) {
+      updateData.name = editForm.value.task_name
+    }
+    if (editForm.value.system_prompt) {
+      updateData.system_prompt = editForm.value.system_prompt
     }
     console.log('[FRONTEND] Sending update data:', updateData)
     await evalStore.updateEvalTask(selectedTaskId.value, updateData)
@@ -736,6 +801,7 @@ async function saveConfig() {
 
     // Update edit form with refreshed data (especially system_prompt)
     if (currentTask.value) {
+      editForm.value.task_name = currentTask.value.name || ''
       editForm.value.system_prompt = currentTask.value.system_prompt || ''
       editForm.value.templateJson = formatJson(currentTask.value.request_template)
     }
@@ -775,16 +841,74 @@ function showResultDetail(row: EvalResult) {
   currentResult.value = row
   // Find the corresponding test case
   currentCase.value = testCases.value.find(tc => tc.id === row.case_id) || null
-  detailDialogVisible.value = true
+  diffDialogVisible.value = true
 }
 
-function showDiffViewer() {
-  detailDialogVisible.value = false
-  diffDialogVisible.value = true
+// Evaluator functions
+async function loadTaskEvaluators(taskId: string) {
+  try {
+    taskEvaluators.value = await evaluatorStore.fetchTaskEvaluators(taskId)
+    selectedEvaluatorIds.value = taskEvaluators.value.map(e => e.id)
+  } catch (error: any) {
+    console.error('Failed to load task evaluators:', error)
+    taskEvaluators.value = []
+    selectedEvaluatorIds.value = []
+  }
+}
+
+async function handleEvaluatorDialogOpen() {
+  await evaluatorStore.fetchEvaluators()
+  // Pre-select current evaluators
+  selectedEvaluatorIds.value = taskEvaluators.value.map(e => e.id)
+}
+
+function showEvaluatorSelector() {
+  evaluatorDialogVisible.value = true
+}
+
+function removeEvaluator(index: number) {
+  const evaluator = taskEvaluators.value[index]
+  if (evaluator && selectedTaskId.value) {
+    selectedEvaluatorIds.value = selectedEvaluatorIds.value.filter(id => id !== evaluator.id)
+    saveEvaluatorsToTask()
+  }
+}
+
+async function saveEvaluators() {
+  if (!selectedTaskId.value) return
+  await saveEvaluatorsToTask()
+  evaluatorDialogVisible.value = false
+}
+
+async function saveEvaluatorsToTask() {
+  if (!selectedTaskId.value) return
+
+  try {
+    await evaluatorStore.setTaskEvaluators(selectedTaskId.value, selectedEvaluatorIds.value)
+    // Clear the cache and reload from server
+    evaluatorStore.clearTaskEvaluatorsCache(selectedTaskId.value)
+    await loadTaskEvaluators(selectedTaskId.value)
+    ElMessage.success('评估器配置已保存')
+  } catch (error: any) {
+    ElMessage.error(error.message || '保存评估器配置失败')
+  }
 }
 </script>
 
 <style scoped>
+.readonly-field {
+  width: 100%;
+  padding: 0 30px 0 11px;
+  height: 32px;
+  line-height: 32px;
+  background-color: #f5f7fa;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  color: #606266;
+  font-size: 14px;
+  cursor: not-allowed;
+}
+
 .evaluation {
   padding: 20px;
   display: flex;
@@ -971,30 +1095,47 @@ function showDiffViewer() {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 6px;
+  gap: 10px;
 }
 
 .run-number {
   font-weight: 500;
 }
 
-.run-time {
+.run-header .run-time {
   font-size: 12px;
   color: #909399;
+  margin-left: auto;
 }
 
 .run-stats {
   display: flex;
-  gap: 15px;
-  font-size: 12px;
-  color: #606266;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 500;
 }
 
-.run-stats .passed {
+.run-stats .stat-passed {
   color: #67c23a;
 }
 
-.run-stats .failed {
+.run-stats .stat-failed {
   color: #f56c6c;
+}
+
+.run-stats .stat-total {
+  color: #303133;
+}
+
+.run-stats .stat-divider {
+  color: #909399;
+  margin: 0 2px;
+}
+
+.run-stats .stat-rate {
+  color: #909399;
+  margin-left: auto;
 }
 
 .results-section {
@@ -1029,5 +1170,73 @@ function showDiffViewer() {
 
 .log-reason {
   color: #606266;
+}
+
+/* Evaluator Selector Styles */
+.evaluator-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.empty-tips {
+  color: #909399;
+  font-size: 13px;
+  padding: 8px 0;
+}
+
+.evaluator-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.evaluator-selector-content {
+  max-height: 400px;
+  display: flex;
+  flex-direction: column;
+}
+
+.available-evaluators {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 0;
+}
+
+.evaluator-option {
+  padding: 8px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.evaluator-option:hover {
+  background-color: #f5f7fa;
+}
+
+.evaluator-option-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.evaluator-option .evaluator-name {
+  font-weight: 500;
+  color: #303133;
+}
+
+.evaluator-option .evaluator-desc {
+  color: #909399;
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.selected-count {
+  padding: 12px;
+  text-align: center;
+  color: #606266;
+  background-color: #f5f7fa;
+  border-radius: 4px;
 }
 </style>

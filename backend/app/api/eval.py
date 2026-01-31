@@ -48,6 +48,7 @@ async def get_eval_tasks(
             }
         result.append(EvalTaskResponse(
             id=t.id,
+            name=t.name,
             set_id=t.set_id,
             model_id=t.model_id,
             concurrency=getattr(t, 'concurrency', 1),
@@ -87,6 +88,7 @@ async def get_eval_task(
 
     return EvalTaskResponse(
         id=task.id,
+        name=task.name,
         set_id=task.set_id,
         model_id=task.model_id,
         concurrency=getattr(task, 'concurrency', 1),
@@ -126,6 +128,7 @@ async def create_eval_task(
 
     return EvalTaskResponse(
         id=task.id,
+        name=task.name,
         set_id=task.set_id,
         model_id=task.model_id,
         concurrency=getattr(task, 'concurrency', 1),
@@ -160,6 +163,7 @@ async def update_eval_task(
     # Debug logging
     print(f"[DEBUG] Update task {task_id} received:")
     print(f"[DEBUG]   Raw data dict: {data.model_dump()}")
+    print(f"[DEBUG]   name={data.name}")
     print(f"[DEBUG]   model_id={data.model_id}")
     print(f"[DEBUG]   concurrency={data.concurrency} (type: {type(data.concurrency).__name__ if data.concurrency is not None else 'NoneType'})")
     print(f"[DEBUG]   request_template={data.request_template}")
@@ -173,7 +177,8 @@ async def update_eval_task(
             data.model_id,
             request_template,
             data.system_prompt,
-            data.concurrency
+            data.concurrency,
+            data.name
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -193,6 +198,7 @@ async def update_eval_task(
 
     return EvalTaskResponse(
         id=task.id,
+        name=task.name,
         set_id=task.set_id,
         model_id=task.model_id,
         concurrency=getattr(task, 'concurrency', 1),

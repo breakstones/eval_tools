@@ -3,10 +3,10 @@
 import json
 import uuid
 from datetime import datetime
-from typing import Any, Optional, Dict
+from typing import Any, Optional, Dict, List
 
 from sqlalchemy import ForeignKey, String, Text, Integer
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
@@ -31,6 +31,10 @@ class EvalTask(Base):
         String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
+    )
+    name: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
     )
     set_id: Mapped[str] = mapped_column(
         String(36),
@@ -86,6 +90,14 @@ class EvalTask(Base):
     def summary_dict(self, value: Optional[Dict[str, Any]]) -> None:
         """Set summary from dict."""
         self.summary = json.dumps(value) if value else None
+
+    # Relationships
+    task_evaluators: Mapped[List["TaskEvaluator"]] = relationship(
+        "TaskEvaluator",
+        back_populates="task",
+        cascade="all, delete-orphan",
+        order_by="TaskEvaluator.order_index",
+    )
 
     def __repr__(self) -> str:
         return f"<EvalTask(id={self.id}, status={self.status})>"

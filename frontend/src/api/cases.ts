@@ -31,10 +31,12 @@ export const casesApi = {
       responseType: 'blob',
     }).then((res) => res.data),
 
-  importExcel: (file: File) => {
+  importExcel: (file: File, setId?: string) => {
     const formData = new FormData()
     formData.append('file', file)
+    console.log('[API] importExcel with setId:', setId)
     return api.post<ExcelImportResponse>('/cases/import', formData, {
+      params: setId ? { set_id: setId } : undefined,
       headers: {
         'Content-Type': 'multipart/form-data',
       },

@@ -57,23 +57,42 @@ class LlmClient:
                     response = await client.post(url, json=request_body, headers=headers)
 
                     if response.status_code == 200:
-                        data = response.json()
+                        try:
+                            data = response.json()
+                        except Exception as e:
+                            # Failed to parse JSON response
+                            return f"[JSON_PARSE_ERROR] {response.text[:500]}"
 
                         # Try to extract response text from common response formats
-                        if "choices" in data and data["choices"]:
-                            return data["choices"][0].get("message", {}).get("content", "")
+                        # Use .get() to avoid KeyError
+                        choices = data.get("choices")
+                        if choices and len(choices) > 0:
+                            message = choices[0].get("message") or {}
+                            content = message.get("content")
+                            if content:
+                                return str(content)
                         elif "output" in data:
-                            return data["output"]
+                            return str(data.get("output", ""))
                         elif "response" in data:
-                            return data["response"]
+                            return str(data.get("response", ""))
                         elif "text" in data:
-                            return data["text"]
-                        elif isinstance(data, str):
-                            return data
+                            return str(data.get("text", ""))
+                        elif "content" in data:
+                            return str(data.get("content", ""))
+                        elif "message" in data:
+                            msg = data.get("message", {})
+                            if isinstance(msg, dict):
+                                return str(msg.get("content", str(msg)))
+                            return str(msg)
                         else:
+                            # Return raw JSON as fallback
                             return json.dumps(data, ensure_ascii=False)
 
-                except httpx.HTTPError:
+                except httpx.HTTPError as e:
+                    print(f"[LLMClient] HTTP error for {endpoint}: {e}")
+                    continue
+                except Exception as e:
+                    print(f"[LLMClient] Unexpected error for {endpoint}: {type(e).__name__}: {e}")
                     continue
 
             # All endpoints failed, try direct URL
@@ -84,12 +103,21 @@ class LlmClient:
                     headers=headers,
                 )
                 if response.status_code == 200:
-                    data = response.json()
-                    if "choices" in data and data["choices"]:
-                        return data["choices"][0].get("message", {}).get("content", "")
-                    return json.dumps(data, ensure_ascii=False)
-            except httpx.HTTPError:
-                pass
+                    try:
+                        data = response.json()
+                        choices = data.get("choices")
+                        if choices and len(choices) > 0:
+                            message = choices[0].get("message") or {}
+                            content = message.get("content")
+                            if content:
+                                return str(content)
+                        return json.dumps(data, ensure_ascii=False)
+                    except Exception as e:
+                        return f"[PARSE_ERROR] {response.text[:500]}"
+            except httpx.HTTPError as e:
+                print(f"[LLMClient] Direct URL error: {e}")
+            except Exception as e:
+                print(f"[LLMClient] Direct URL unexpected error: {type(e).__name__}: {e}")
 
             return None
 

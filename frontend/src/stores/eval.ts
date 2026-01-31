@@ -211,7 +211,7 @@ export const useEvalStore = defineStore('eval', () => {
             actual_output: data.data.actual_output,
             is_passed: data.data.is_passed,
             execution_error: data.data.execution_error || null,
-            evaluator_logs: [],
+            evaluator_logs: data.data.evaluator_logs || [],
             created_at: new Date().toISOString(),
           }
           evalResults.value.push(result)

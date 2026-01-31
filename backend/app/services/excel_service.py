@@ -255,6 +255,36 @@ class ExcelService:
 
         return case_set, test_cases
 
+    async def import_to_set(self, file_content: bytes, case_set: CaseSet) -> List[TestCase]:
+        """Import test cases to an existing case set with deduplication by case_uid.
+
+        Args:
+            file_content: Excel file content as bytes
+            case_set: Existing case set to import cases to
+
+        Returns:
+            List of created/updated test cases
+
+        Raises:
+            ExcelParseError: If Excel file is invalid
+        """
+        try:
+            df = pd.read_excel(io.BytesIO(file_content))
+        except Exception as e:
+            raise ExcelParseError(f"无法读取Excel文件: {e!s}")
+
+        if df.empty:
+            raise ExcelParseError("Excel文件为空")
+
+        # When importing to existing set, all rows are test cases
+        # (First row with case set name was consumed as header by pandas)
+        test_cases_data = self._parse_test_cases(df, case_set.id)
+
+        # Use upsert to create or update test cases (deduplicate by case_uid)
+        test_cases = await self.case_service.upsert_test_cases_batch(test_cases_data)
+
+        return test_cases
+
     async def export_excel(self, case_set_id: str) -> bytes:
         """Export case set and test cases to Excel file.
 

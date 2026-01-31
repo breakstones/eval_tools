@@ -20,6 +20,7 @@ class EvalTaskCreate(BaseModel):
 
     model_config = ConfigDict(protected_namespaces=())
 
+    name: str
     set_id: str
     model_id: str
     concurrency: int = 1  # 并发数量，默认为1（串行）
@@ -33,6 +34,7 @@ class EvalTaskUpdate(BaseModel):
 
     model_config = ConfigDict(protected_namespaces=())
 
+    name: Optional[str] = None
     model_id: Optional[str] = None
     concurrency: Optional[int] = None
     request_template: Optional[RequestTemplate] = None
@@ -45,6 +47,7 @@ class EvalTaskResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
     id: str
+    name: Optional[str] = None
     set_id: str
     model_id: str
     concurrency: int = 1  # 并发数量

@@ -1,8 +1,8 @@
 """API routes for case set and test case management."""
 
-from typing import Any
+from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_case_service, get_excel_service
@@ -121,12 +121,35 @@ async def export_case_set(
 @router.post("/import", response_model=ExcelImportResponse, status_code=201)
 async def import_excel(
     file: UploadFile,
+    set_id: Optional[str] = Query(None, description="Case set ID to append cases to"),
     service: ExcelService = Depends(get_excel_service),
+    case_service: CaseService = Depends(get_case_service),
 ) -> ExcelImportResponse:
-    """Import case set and test cases from Excel file."""
+    """Import case set and test cases from Excel file.
+
+    Args:
+        file: Excel file to import
+        set_id: Optional case set ID to append to. If provided, cases will be
+               imported to the existing set with deduplication by case_uid.
+    """
+    print(f"[DEBUG] import_excel called with set_id={set_id}")
     content = await file.read()
     try:
-        case_set, test_cases = await service.import_excel(content, file.filename)
+        if set_id:
+            # Append to existing case set with deduplication
+            print(f"[DEBUG] Importing to existing set: {set_id}")
+            case_set = await case_service.get_case_set(set_id)
+            if case_set is None:
+                raise HTTPException(status_code=404, detail="用例集不存在")
+            test_cases = await service.import_to_set(content, case_set)
+            cases_created = len(test_cases)
+            print(f"[DEBUG] Imported {cases_created} cases to set {set_id}")
+        else:
+            # Create new case set
+            print(f"[DEBUG] Creating new case set")
+            case_set, test_cases = await service.import_excel(content, file.filename)
+            cases_created = len(test_cases)
+            print(f"[DEBUG] Created new set {case_set.id} with {cases_created} cases")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -135,9 +158,9 @@ async def import_excel(
             id=case_set.id,
             name=case_set.name,
             created_at=case_set.created_at,
-            case_count=len(test_cases),
+            case_count=cases_created,
         ),
-        cases_created=len(test_cases),
+        cases_created=cases_created,
     )
 
 

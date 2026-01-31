@@ -152,11 +152,16 @@ export const useCasesStore = defineStore('cases', () => {
     }
   }
 
-  async function importExcel(file: File) {
+  async function importExcel(file: File, setId?: string) {
     loading.value = true
     error.value = null
     try {
-      const result = await casesApi.importExcel(file)
+      const result = await casesApi.importExcel(file, setId)
+      // If importing to existing set, refresh test cases
+      if (setId && currentCaseSet.value?.id === setId) {
+        await fetchTestCases(setId)
+      }
+      // Always refresh case sets to update counts
       await fetchCaseSets()
       return result
     } catch (e) {

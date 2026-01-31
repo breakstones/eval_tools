@@ -25,8 +25,11 @@
           >
             <el-table-column prop="name" label="名称" />
             <el-table-column prop="case_count" label="用例数" width="80" align="center" />
-            <el-table-column width="120" align="right">
+            <el-table-column width="160" align="right">
               <template #default="{ row }">
+                <el-button link type="primary" size="small" @click.stop="handleEditSet(row)">
+                  编辑
+                </el-button>
                 <el-button link type="primary" size="small" @click.stop="handleExport(row)">
                   <el-icon><Download /></el-icon>
                 </el-button>
@@ -46,6 +49,14 @@
             <div class="card-header">
               <span>{{ casesStore.currentCaseSet.name }}</span>
               <div class="header-actions">
+                <el-button
+                  v-if="selectedCases.length > 0"
+                  type="danger"
+                  size="small"
+                  @click="handleBatchDelete"
+                >
+                  删除选中 ({{ selectedCases.length }})
+                </el-button>
                 <el-upload
                   :show-file-list="false"
                   :before-upload="handleImportExcel"
@@ -65,7 +76,12 @@
             </div>
           </template>
 
-          <el-table :data="casesStore.testCases" stripe>
+          <el-table
+            :data="casesStore.testCases"
+            stripe
+            @selection-change="handleSelectionChange"
+          >
+            <el-table-column type="selection" width="55" />
             <el-table-column prop="case_uid" label="编号" width="100" />
             <el-table-column prop="description" label="描述" width="200" />
             <el-table-column prop="user_input" label="用户输入" show-overflow-tooltip />
@@ -96,14 +112,6 @@
       <el-form :model="setForm" label-width="100px">
         <el-form-item label="名称" required>
           <el-input v-model="setForm.name" placeholder="请输入用例集名称" />
-        </el-form-item>
-        <el-form-item label="系统提示词">
-          <el-input
-            v-model="setForm.system_prompt"
-            type="textarea"
-            :rows="4"
-            placeholder="请输入系统提示词（可选）"
-          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -165,10 +173,12 @@ const caseDialogVisible = ref(false)
 const editingSet = ref<CaseSet | null>(null)
 const editingCase = ref<TestCase | null>(null)
 
+// Selected cases for batch delete
+const selectedCases = ref<TestCase[]>([])
+
 // Form data
 const setForm = ref({
   name: '',
-  system_prompt: '',
 })
 
 const caseForm = ref({
@@ -178,8 +188,12 @@ const caseForm = ref({
   expected_output: '',
 })
 
-onMounted(() => {
-  casesStore.fetchCaseSets()
+onMounted(async () => {
+  await casesStore.fetchCaseSets()
+  // Auto-select first case set if available
+  if (casesStore.caseSets.length > 0) {
+    selectCaseSet(casesStore.caseSets[0])
+  }
 })
 
 function selectCaseSet(row: CaseSet) {
@@ -189,7 +203,7 @@ function selectCaseSet(row: CaseSet) {
 
 function showCreateSetDialog() {
   editingSet.value = null
-  setForm.value = { name: '', system_prompt: '' }
+  setForm.value = { name: '' }
   setDialogVisible.value = true
 }
 
@@ -206,6 +220,18 @@ function showCreateCaseDialog() {
     expected_output: '',
   }
   caseDialogVisible.value = true
+}
+
+function handleEditSet(row: CaseSet) {
+  editingSet.value = row
+  setForm.value = {
+    name: row.name,
+  }
+  setDialogVisible.value = true
+}
+
+function handleSelectionChange(selection: TestCase[]) {
+  selectedCases.value = selection
 }
 
 function handleEditCase(row: TestCase) {
@@ -290,10 +316,38 @@ async function handleDeleteCase(row: TestCase) {
   }
 }
 
+async function handleBatchDelete() {
+  if (selectedCases.value.length === 0) {
+    return
+  }
+  const count = selectedCases.value.length
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${count} 个测试用例吗？`,
+      '确认批量删除',
+      { type: 'warning' }
+    )
+    // Delete all selected cases
+    await Promise.all(
+      selectedCases.value.map(tc => casesStore.deleteTestCase(tc.id))
+    )
+    selectedCases.value = []
+    ElMessage.success(`成功删除 ${count} 个测试用例`)
+  } catch (e) {
+    if (e !== 'cancel') {
+      ElMessage.error(e instanceof Error ? e.message : '删除失败')
+    }
+  }
+}
+
 async function handleImportExcel(file: File) {
   try {
-    const result = await casesStore.importExcel(file)
-    ElMessage.success(`导入成功，创建了 ${result.cases_created} 个测试用例`)
+    // Import to current selected case set, or create new if none selected
+    const setId = casesStore.currentCaseSet?.id
+    console.log('[FRONTEND] Importing Excel with setId:', setId)
+    const result = await casesStore.importExcel(file, setId)
+    const action = setId ? '追加' : '创建'
+    ElMessage.success(`导入成功，${action}了 ${result.cases_created} 个测试用例`)
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : '导入失败')
   }

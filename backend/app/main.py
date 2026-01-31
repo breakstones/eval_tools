@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.cases import router as cases_router
 from app.api.eval import router as eval_router
 from app.api.models import router as models_router
+from app.api.evaluators import router as evaluators_router
 from app.config import settings
 from app.database import init_db, close_db
 
@@ -45,6 +46,7 @@ app.add_middleware(
 app.include_router(cases_router)
 app.include_router(eval_router)
 app.include_router(models_router)
+app.include_router(evaluators_router)
 
 
 @app.get("/")

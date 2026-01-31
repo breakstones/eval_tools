@@ -16,6 +16,7 @@ export interface RequestTemplate {
 }
 
 export interface EvalTaskCreate {
+  name?: string
   set_id: string
   model_id: string
   concurrency?: number  // 并发数量，默认1
@@ -25,6 +26,7 @@ export interface EvalTaskCreate {
 }
 
 export interface EvalTaskUpdate {
+  name?: string
   model_id?: string
   concurrency?: number  // 并发数量
   request_template?: RequestTemplate
@@ -44,6 +46,7 @@ export interface TemplateTestResponse {
 
 export interface EvalTask {
   id: string
+  name?: string | null
   set_id: string
   model_id: string
   concurrency: number  // 并发数量
@@ -88,7 +91,7 @@ export interface EvalRun {
 }
 
 export interface EvaluatorLog {
-  name: string
+  evaluator: string
   passed: boolean
   reason?: string
 }

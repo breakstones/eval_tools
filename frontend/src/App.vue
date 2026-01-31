@@ -10,8 +10,9 @@
           class="nav-menu"
         >
           <el-menu-item index="/cases">用例管理</el-menu-item>
-          <el-menu-item index="/models">模型管理</el-menu-item>
           <el-menu-item index="/evaluation">评测管理</el-menu-item>
+          <el-menu-item index="/evaluators">评估器管理</el-menu-item>
+          <el-menu-item index="/models">模型管理</el-menu-item>
         </el-menu>
       </div>
     </el-header>
@@ -66,10 +67,15 @@ const currentPath = computed(() => route.path)
   color: rgba(255, 255, 255, 0.8);
 }
 
-.nav-menu :deep(.el-menu-item:hover),
-.nav-menu :deep(.el-menu-item.is-active) {
+.nav-menu :deep(.el-menu-item:hover) {
   background-color: rgba(255, 255, 255, 0.1);
-  color: white;
+  color: white !important;
+}
+
+.nav-menu :deep(.el-menu-item.is-active) {
+  background-color: rgba(255, 255, 255, 0.15);
+  color: white !important;
+  font-weight: 500;
 }
 
 .app-main {

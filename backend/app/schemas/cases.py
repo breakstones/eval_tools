@@ -18,16 +18,17 @@ class CaseSetCreate(CaseSetBase):
     pass
 
 
-class CaseSetUpdate(CaseSetBase):
+class CaseSetUpdate(BaseModel):
     """Schema for updating a CaseSet."""
 
     name: Optional[str] = None
 
 
-class CaseSetResponse(CaseSetBase):
+class CaseSetResponse(BaseModel):
     """Schema for CaseSet response."""
 
     id: str
+    name: str
     created_at: datetime
     case_count: int = 0
 

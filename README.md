@@ -6,9 +6,18 @@
 
 ### 1. 用例管理
 
-- **Excel 导入/导出**：支持从 Excel 文件批量导入测试用例
-- **用例集管理**：创建、编辑、删除用例集
+- **Excel 导入/导出**：
+  - 支持从 Excel 文件批量导入测试用例
+  - 导入到现有用例集，支持按用例编号去重覆盖
+  - 导出用例集为 Excel 文件
+
+- **用例集管理**：
+  - 创建、编辑（名称）、删除用例集
+  - 自动选中第一个用例集
+  - 测试用例批量删除
+
 - **测试用例 CRUD**：完整的用例增删改查操作
+
 - **用例字段**：
   - 用例编号 (CASE-001)
   - 用例描述
@@ -28,10 +37,12 @@
 ### 3. 评测管理
 
 - **任务配置**：
+  - 任务名称（必填，可编辑）
   - 选择用例集和模型
   - 配置系统提示词
   - 自定义请求模板（JSON 格式）
   - 配置并发数量（1-20）
+  - 显示当前用例集名称（只读）
 
 - **并发评测**：支持同时运行多个评测请求，提高效率
 
@@ -42,14 +53,27 @@
 - **结果详情**：
   - 用例编号
   - 预期输出 vs 实际输出
-  - Diff 对比高亮显示
+  - Diff 对比高亮显示（Beyond Compare 风格）
+  - 评估器执行详情
   - 评估通过/失败状态
+  - 统计信息：通过数/失败数/总数（颜色区分）
 
 ### 4. 评估器
 
 **内置评估器**：
 - **精确匹配评估器**：字符串精确匹配
 - **JSON 比较评估器**：JSON 结构深度比较，支持自动修复 LLM 输出的畸形 JSON
+
+**LLM 评估器**：
+- **审核规则评估器（LLM Judge）**：使用 LLM 对输出进行智能评估
+  - 自定义审核规则
+  - 灵活的评分标准
+  - 详细的评估原因
+
+**评估器管理**：
+- 创建、编辑、删除评估器
+- 为评测任务配置多个评估器
+- 评估结果合并：任意一个不通过则整体不通过
 
 ### 5. 模板变量系统
 
@@ -146,9 +170,13 @@ eval_tools_v2/
 │   ├── src/
 │   │   ├── api/               # API 封装
 │   │   ├── components/        # 组件
+│   │   │   └── DiffViewer.vue # Diff 对比组件
 │   │   ├── stores/            # 状态管理
 │   │   ├── types/             # 类型定义
 │   │   ├── views/             # 页面视图
+│   │   │   ├── CaseManagement.vue   # 用例管理
+│   │   │   ├── Evaluation.vue        # 评测管理
+│   │   │   └── EvaluatorManagement.vue # 评估器管理
 │   │   └── router/            # 路由配置
 │   └── package.json
 └── README.md
@@ -172,9 +200,21 @@ eval_tools_v2/
 - `GET /api/models` - 获取模型列表
 - `POST /api/models` - 创建模型
 
+### 评估器管理
+- `GET /api/evaluators` - 获取评估器列表
+- `POST /api/evaluators` - 创建评估器
+- `GET /api/evaluators/{id}` - 获取单个评估器
+- `PUT /api/evaluators/{id}` - 更新评估器
+- `DELETE /api/evaluators/{id}` - 删除评估器
+- `GET /api/evaluators/tasks/{task_id}/evaluators` - 获取任务的评估器
+- `PUT /api/evaluators/tasks/{task_id}/evaluators` - 设置任务的评估器
+
 ### 评测管理
 - `GET /api/eval/tasks` - 获取评测任务列表
+- `GET /api/eval/tasks/{id}` - 获取单个评测任务
 - `POST /api/eval/tasks` - 创建评测任务
+- `PUT /api/eval/tasks/{id}` - 更新评测任务
+- `DELETE /api/eval/tasks/{id}` - 删除评测任务
 - `POST /api/eval/tasks/{id}/rerun` - 重新运行评测
 - `GET /api/eval/tasks/{id}/runs` - 获取运行历史
 - `GET /api/eval/runs/{run_id}/results` - 获取运行结果

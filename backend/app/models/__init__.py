@@ -7,6 +7,8 @@ from app.models.eval_run import EvalRun
 from app.models.eval_result import EvalResult
 from app.models.model_provider import ModelProvider
 from app.models.model import Model
+from app.models.evaluator import Evaluator
+from app.models.task_evaluator import TaskEvaluator
 
 __all__ = [
     "CaseSet",
@@ -16,4 +18,6 @@ __all__ = [
     "EvalResult",
     "ModelProvider",
     "Model",
+    "Evaluator",
+    "TaskEvaluator",
 ]

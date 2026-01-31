@@ -247,3 +247,66 @@ class CaseService:
             select(func.count(TestCase.id)).where(TestCase.set_id == set_id)
         )
         return result.scalar() or 0
+
+    async def get_test_case_by_uid(self, set_id: str, case_uid: str) -> Optional[TestCase]:
+        """Get a test case by case_uid within a case set.
+
+        Args:
+            set_id: Case set ID
+            case_uid: Test case UID
+
+        Returns:
+            Test case or None if not found
+        """
+        result = await self.session.execute(
+            select(TestCase)
+            .where(TestCase.set_id == set_id)
+            .where(TestCase.case_uid == case_uid)
+        )
+        return result.scalar_one_or_none()
+
+    async def upsert_test_cases_batch(self, cases_data: List[TestCaseCreate]) -> List[TestCase]:
+        """Create or update multiple test cases in batch.
+
+        For each case, if a case with the same case_uid exists in the set, it will be updated.
+        Otherwise, a new case will be created.
+
+        Args:
+            cases_data: List of test case creation data
+
+        Returns:
+            List of created/updated test cases
+        """
+        result_cases = []
+        for data in cases_data:
+            # Check if a case with the same case_uid exists
+            existing_case = None
+            if data.case_uid:
+                existing_case = await self.get_test_case_by_uid(data.set_id, data.case_uid)
+
+            if existing_case:
+                # Update existing case
+                if data.description is not None:
+                    existing_case.description = data.description
+                if data.user_input is not None:
+                    existing_case.user_input = data.user_input
+                if data.expected_output is not None:
+                    existing_case.expected_output = data.expected_output
+                await self.session.flush()
+                await self.session.refresh(existing_case)
+                result_cases.append(existing_case)
+            else:
+                # Create new case
+                new_case = TestCase(
+                    set_id=data.set_id,
+                    case_uid=data.case_uid,
+                    description=data.description,
+                    user_input=data.user_input,
+                    expected_output=data.expected_output,
+                )
+                self.session.add(new_case)
+                await self.session.flush()
+                await self.session.refresh(new_case)
+                result_cases.append(new_case)
+
+        return result_cases

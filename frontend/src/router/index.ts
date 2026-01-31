@@ -22,6 +22,11 @@ const router = createRouter({
       name: 'ModelManagement',
       component: () => import('@/views/ModelManagement.vue'),
     },
+    {
+      path: '/evaluators',
+      name: 'EvaluatorManagement',
+      component: () => import('@/views/EvaluatorManagement.vue'),
+    },
   ],
 })
 

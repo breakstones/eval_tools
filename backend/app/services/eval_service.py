@@ -21,10 +21,14 @@ from app.models.eval_task import EvalTask
 from app.models.test_case import TestCase
 from app.models.model import Model
 from app.models.model_provider import ModelProvider
+from app.models.evaluator import Evaluator
+from app.models.task_evaluator import TaskEvaluator
 from app.schemas.eval import EvalSummary, EvalTaskCreate, RequestTemplate
 from app.evaluators.base import BaseEvaluator
 from app.evaluators.exact_match import ExactMatchEvaluator
 from app.evaluators.json_compare import JsonCompareEvaluator
+from app.evaluators.llm_judge import LlmJudgeEvaluator
+from app.evaluators.code_executor import CodeEvaluator
 from app.utils.llm_client import LlmClient
 from app.utils.templater import TemplateRenderer
 from app.database import async_session_factory
@@ -73,6 +77,78 @@ class EvalService:
         if evaluator_class is None:
             raise ValueError(f"未知的评估器类型: {evaluator_type}")
         return evaluator_class()
+
+    async def _get_task_evaluators_with_clients(
+        self,
+        task_id: str,
+    ) -> List[Tuple[BaseEvaluator, Optional[LlmClient], str]]:
+        """Get evaluators configured for a task with their LLM clients.
+
+        Args:
+            task_id: Task ID
+
+        Returns:
+            List of (evaluator, llm_client, display_name) tuples.
+            - evaluator: The evaluator instance
+            - llm_client: LLM client for LLM evaluators, None for others
+            - display_name: User-defined name from database
+        """
+        print(f"[DEBUG] _get_task_evaluators_with_clients called with task_id={task_id}")
+        # Get task evaluators from database
+        result = await self.session.execute(
+            select(TaskEvaluator, Evaluator)
+            .join(Evaluator, TaskEvaluator.evaluator_id == Evaluator.id)
+            .where(TaskEvaluator.task_id == task_id)
+            .order_by(TaskEvaluator.order_index)
+        )
+        all_rows = result.all()
+        print(f"[DEBUG] Found {len(all_rows)} task evaluators in database")
+
+        evaluators = []
+        for task_eval, evaluator in all_rows:
+            config = evaluator.config_dict
+            display_name = evaluator.name  # User-defined name from database
+            print(f"[DEBUG] Task evaluator: id={evaluator.id}, name={display_name}, type={evaluator.type}")
+
+            if evaluator.type == "code":
+                # Check if it's a system evaluator
+                if evaluator.name == "exact_match":
+                    evaluators.append((ExactMatchEvaluator(), None, display_name))
+                elif evaluator.name == "json_compare":
+                    evaluators.append((JsonCompareEvaluator(), None, display_name))
+                else:
+                    # Custom code evaluator
+                    code = config.get("code", "")
+                    evaluators.append((CodeEvaluator(code), None, display_name))
+
+            elif evaluator.type == "llm_judge":
+                # Get model_id from config
+                model_id = config.get("model_id")
+                if model_id:
+                    # Get the configured model
+                    model_result = await self.session.execute(
+                        select(Model, ModelProvider)
+                        .join(ModelProvider, Model.provider_id == ModelProvider.id)
+                        .where(Model.id == model_id)
+                    )
+                    model_row = model_result.first()
+                    if model_row:
+                        model, provider = model_row
+                        llm_client = LlmClient(
+                            base_url=provider.base_url,
+                            api_key=provider.api_key,
+                        )
+                        llm_client.model_code = model.model_code
+                        evaluators.append((LlmJudgeEvaluator(config, llm_client), llm_client, display_name))
+                    else:
+                        # Model not found, skip this evaluator
+                        print(f"[WARNING] LLM evaluator {display_name} configured model {model_id} not found, skipping")
+                else:
+                    # No model configured, skip this evaluator
+                    print(f"[WARNING] LLM evaluator {display_name} has no model_id configured, skipping")
+
+        print(f"[DEBUG] Returning {len(evaluators)} evaluators")
+        return evaluators
 
     async def get_eval_tasks(self, set_id: Optional[str] = None) -> List[EvalTask]:
         """Get evaluation tasks.
@@ -142,6 +218,7 @@ class EvalService:
 
         # Create task
         task = EvalTask(
+            name=data.name,
             set_id=data.set_id,
             model_id=data.model_id,
             request_template=json.dumps(request_template),
@@ -159,7 +236,8 @@ class EvalService:
         model_id: Optional[str] = None,
         request_template: Optional[Dict[str, Any]] = None,
         system_prompt: Optional[str] = None,
-        concurrency: Optional[int] = None
+        concurrency: Optional[int] = None,
+        name: Optional[str] = None
     ) -> EvalTask:
         """Update an evaluation task.
 
@@ -169,6 +247,7 @@ class EvalService:
             request_template: New request template
             system_prompt: New system prompt
             concurrency: Concurrent execution count
+            name: Task name
 
         Returns:
             Updated task
@@ -179,6 +258,9 @@ class EvalService:
         task = await self.get_eval_task(task_id)
         if task is None:
             raise ValueError(f"任务不存在: {task_id}")
+
+        if name is not None:
+            task.name = name
 
         if model_id is not None:
             # Verify model exists
@@ -435,6 +517,21 @@ class EvalService:
         # Queue to maintain result order
         result_queue: asyncio.Queue[Tuple[int, Dict]] = asyncio.Queue()
 
+        def format_json_if_valid(json_str: str) -> str:
+            """Format JSON string with indent=4 if valid, otherwise return original."""
+            if not json_str or not json_str.strip():
+                return json_str
+            json_str = json_str.strip()
+            # Check if it looks like JSON (starts with { or [)
+            if not (json_str.startswith('{') or json_str.startswith('[')):
+                return json_str
+            try:
+                import json
+                parsed = json.loads(json_str)
+                return json.dumps(parsed, ensure_ascii=False, indent=4)
+            except (json.JSONDecodeError, ValueError):
+                return json_str
+
         async def evaluate_single_case(index: int, case: TestCase) -> None:
             """Evaluate a single test case and put result in queue."""
             async with semaphore:
@@ -475,20 +572,93 @@ class EvalService:
                 is_passed = False
 
                 if actual_output is not None:
-                    evaluator = ExactMatchEvaluator()
-                    is_passed, evaluator_log = evaluator.evaluate(
-                        case.expected_output or "",
-                        actual_output,
-                    )
-                    evaluator_logs.append(evaluator_log)
+                    # Format JSON outputs for better comparison
+                    formatted_expected = format_json_if_valid(case.expected_output or "")
+                    formatted_actual = format_json_if_valid(actual_output)
+
+                    # Get task evaluators with their LLM clients
+                    task_evaluators = await self._get_task_evaluators_with_clients(task_id)
+
+                    # If no evaluators configured, use default exact match
+                    if not task_evaluators:
+                        task_evaluators = [(ExactMatchEvaluator(), None, "精确匹配")]
+
+                    # Run all evaluators (any fail means overall fail)
+                    is_passed = True
+                    for evaluator, eval_llm_client, display_name in task_evaluators:
+                        if evaluator.name == "code_executor":
+                            # Code evaluator needs async evaluation
+                            eval_passed, eval_log = await evaluator.evaluate_async(
+                                formatted_expected,
+                                formatted_actual,
+                            )
+                        elif evaluator.name == "llm_judge":
+                            # LLM judge needs async evaluation
+                            # Use the evaluator's configured LLM client
+                            if not eval_llm_client:
+                                eval_passed = False
+                                eval_log = "LLM评估器未配置模型"
+                            else:
+                                # Render prompt using replace to avoid issues with JSON examples
+                                prompt_template = evaluator.prompt_template
+                                prompt = prompt_template.replace("${expected}", formatted_expected).replace("${actual}", formatted_actual)
+                                request = {
+                                    "model": eval_llm_client.model_code,
+                                    "messages": [
+                                        {"role": "system", "content": "你是一个专业的评估助手。请以JSON格式返回评估结果。"},
+                                        {"role": "user", "content": prompt},
+                                    ],
+                                    "temperature": 0.1,
+                                }
+                                try:
+                                    response = await eval_llm_client.call_llm(request)
+                                    import json
+                                    from app.utils.json_repair import JsonRepair
+                                    try:
+                                        result_data = json.loads(response)
+                                        result_value = result_data.get("result", "failed").lower()
+                                        eval_log = result_data.get("reason", "")
+                                        eval_passed = result_value == "passed"
+                                    except json.JSONDecodeError:
+                                        # Try to repair JSON
+                                        try:
+                                            repaired = JsonRepair.repair(response)
+                                            result_data = json.loads(repaired)
+                                            result_value = result_data.get("result", "failed").lower()
+                                            eval_log = result_data.get("reason", "")
+                                            eval_passed = result_value == "passed"
+                                            eval_log += " (JSON已自动修复)"
+                                        except Exception:
+                                            eval_passed = False
+                                            eval_log = f"LLM返回无效JSON，修复失败: {response[:200]}"
+                                except Exception as e:
+                                    eval_passed = False
+                                    eval_log = f"LLM调用失败: {str(e)}"
+                        else:
+                            # Sync evaluator
+                            eval_passed, eval_log = evaluator.evaluate(
+                                formatted_expected,
+                                formatted_actual,
+                            )
+
+                        evaluator_logs.append({
+                            "evaluator": display_name,
+                            "passed": eval_passed,
+                            "reason": eval_log,
+                        })
+                        print(f"[DEBUG] Evaluator log: evaluator={display_name}, passed={eval_passed}")
+
+                        # Any evaluator failing means overall failure
+                        if not eval_passed:
+                            is_passed = False
                 else:
                     # Execution failed
                     is_passed = False
 
-                # Put result in queue
+                # Put result in queue (use formatted outputs)
                 await result_queue.put((index, {
                     "case": case,
-                    "actual_output": actual_output,
+                    "actual_output": formatted_actual,
                     "is_passed": is_passed,
                     "execution_error": execution_error,
                     "evaluator_logs": evaluator_logs,
@@ -544,6 +714,7 @@ class EvalService:
                             "is_passed": next_result["is_passed"],
                             "actual_output": next_result["actual_output"],
                             "execution_error": next_result["execution_error"],
+                            "evaluator_logs": next_result["evaluator_logs"],
                         },
                     )
 
@@ -818,24 +989,97 @@ class EvalService:
             evaluator_logs = []
             is_passed = False
 
-            if actual_output is not None:
-                # Try exact match evaluator by default
-                evaluator = ExactMatchEvaluator()
-                is_passed, evaluator_log = evaluator.evaluate(
-                    case.expected_output or "",
-                    actual_output,
-                )
-                evaluator_logs.append(evaluator_log)
+            # When actual_output is None, it's an execution failure
+            if actual_output is None:
+                is_passed = False
             else:
-                # Execution failed - count as failed
-                failed += 1
+                # Format JSON outputs for better comparison
+                formatted_expected = format_json_if_valid(case.expected_output or "")
+                formatted_actual = format_json_if_valid(actual_output)
 
-            # Create result
+                # Get task evaluators with their LLM clients
+                task_evaluators = await self._get_task_evaluators_with_clients(task_id)
+
+                # If no evaluators configured, use default exact match
+                if not task_evaluators:
+                    task_evaluators = [(ExactMatchEvaluator(), None, "精确匹配")]
+
+                # Run all evaluators (any fail means overall fail)
+                is_passed = True
+                for evaluator, eval_llm_client, display_name in task_evaluators:
+                    if evaluator.name == "code_executor":
+                        # Code evaluator needs async evaluation
+                        eval_passed, eval_log = await evaluator.evaluate_async(
+                            formatted_expected,
+                            formatted_actual,
+                        )
+                    elif evaluator.name == "llm_judge":
+                        # LLM judge needs async evaluation
+                        # Use the evaluator's configured LLM client
+                        if not eval_llm_client:
+                            eval_passed = False
+                            eval_log = "LLM评估器未配置模型"
+                        else:
+                            # Render prompt
+                            prompt = evaluator.prompt_template.format(
+                                expected=formatted_expected,
+                                actual=formatted_actual,
+                            )
+                            request = {
+                                "model": eval_llm_client.model_code,
+                                "messages": [
+                                    {"role": "system", "content": "你是一个专业的评估助手。请以JSON格式返回评估结果。"},
+                                    {"role": "user", "content": prompt},
+                                ],
+                                "temperature": 0.1,
+                            }
+                            try:
+                                response = await eval_llm_client.call_llm(request)
+                                import json
+                                from app.utils.json_repair import JsonRepair
+                                try:
+                                    result_data = json.loads(response)
+                                    result_value = result_data.get("result", "failed").lower()
+                                    eval_log = result_data.get("reason", "")
+                                    eval_passed = result_value == "passed"
+                                except json.JSONDecodeError:
+                                    # Try to repair JSON
+                                    try:
+                                        repaired = JsonRepair.repair(response)
+                                        result_data = json.loads(repaired)
+                                        result_value = result_data.get("result", "failed").lower()
+                                        eval_log = result_data.get("reason", "")
+                                        eval_passed = result_value == "passed"
+                                        eval_log += " (JSON已自动修复)"
+                                    except Exception:
+                                        eval_passed = False
+                                        eval_log = f"LLM返回无效JSON，修复失败: {response[:200]}"
+                            except Exception as e:
+                                eval_passed = False
+                                eval_log = f"LLM调用失败: {str(e)}"
+                    else:
+                        # Sync evaluator
+                        eval_passed, eval_log = evaluator.evaluate(
+                            formatted_expected,
+                            formatted_actual,
+                        )
+
+                    evaluator_logs.append({
+                        "evaluator": display_name,
+                        "passed": eval_passed,
+                        "reason": eval_log,
+                    })
+
+                    # Any evaluator failing means overall failure
+                    if not eval_passed:
+                        is_passed = False
+
+            # Create result (use formatted output for display)
             result = EvalResult(
                 run_id=run.id,
                 task_id=task_id,
                 case_id=case.id,
-                actual_output=actual_output,
+                actual_output=formatted_actual,  # Save formatted version
                 is_passed=is_passed,
                 execution_error=execution_error,
                 evaluator_logs=json.dumps(evaluator_logs),
