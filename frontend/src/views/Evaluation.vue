@@ -133,8 +133,9 @@
             <el-input
               v-model="editForm.system_prompt"
               type="textarea"
-              :rows="3"
+              :rows="18"
               placeholder="请输入系统提示词（留空则使用用例集的默认提示词）"
+              class="system-prompt-textarea"
             />
 
             <el-divider>请求模板</el-divider>
@@ -181,6 +182,8 @@
               <el-progress
                 :percentage="progressPercentage"
                 :status="progressStatus"
+                :striped="true"
+                :striped-flow="true"
               >
                 <template #default="{ percentage }">
                   <span>{{ evalStore.progress.current }} / {{ evalStore.progress.total }}</span>
@@ -1054,6 +1057,10 @@ async function saveEvaluatorsToTask() {
   align-items: center;
 }
 
+.system-prompt-textarea :deep(.el-textarea__inner) {
+  height: 600px !important;
+}
+
 .main-content {
   flex: 1;
   min-height: 0;
@@ -1083,6 +1090,17 @@ async function saveEvaluatorsToTask() {
   /* 隐藏滚动条但保持滚动功能 */
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE/Edge */
+}
+
+.main-content .task-info-card :deep(.el-card__body) {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.main-content .task-info-card :deep(.el-card__body)::-webkit-scrollbar {
+  display: none;
 }
 
 .main-content .el-card :deep(.el-card__body)::-webkit-scrollbar {
@@ -1174,7 +1192,6 @@ async function saveEvaluatorsToTask() {
 
 .runs-section {
   flex-shrink: 0;
-  margin-bottom: 20px;
   height: 160px;
 }
 
