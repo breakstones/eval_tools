@@ -76,6 +76,9 @@ export interface EvalResult {
   is_passed: boolean
   execution_error?: string | null  // 执行错误信息
   evaluator_logs: EvaluatorLog[]
+  execution_duration?: number | null  // 执行时长（毫秒）
+  skill_tokens?: number | null  // 技能LLM调用的token消耗
+  evaluator_tokens?: number | null  // LLM评估器的token消耗
   created_at: string
 }
 
@@ -88,6 +91,9 @@ export interface EvalRun {
   started_at: string
   completed_at: string | null
   error: string | null
+  total_duration_ms?: number | null  // 总执行时长（毫秒）
+  total_skill_tokens?: number | null  // 总技能LLM tokens消耗
+  total_evaluator_tokens?: number | null  // 总评估器LLM tokens消耗
 }
 
 export interface EvaluatorLog {

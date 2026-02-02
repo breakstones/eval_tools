@@ -74,6 +74,9 @@ class EvalResultResponse(BaseModel):
     is_passed: bool
     execution_error: Optional[str] = None  # 执行错误信息，如模型调用失败
     evaluator_logs: List[Any]
+    execution_duration: Optional[int] = None  # 执行时长（毫秒）
+    skill_tokens: Optional[int] = None  # 技能LLM调用的token消耗
+    evaluator_tokens: Optional[int] = None  # LLM评估器的token消耗
     created_at: datetime
 
 
@@ -90,6 +93,9 @@ class EvalRunResponse(BaseModel):
     started_at: datetime
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
+    total_duration_ms: Optional[int] = None  # 总执行时长（毫秒）
+    total_skill_tokens: Optional[int] = None  # 总技能LLM tokens消耗
+    total_evaluator_tokens: Optional[int] = None  # 总评估器LLM tokens消耗
 
 
 class EvalProgressEvent(BaseModel):

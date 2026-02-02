@@ -217,6 +217,17 @@
                     <span class="stat-total">{{ run.summary.total }}</span>
                     <span class="stat-rate">{{ run.summary.pass_rate.toFixed(1) }}%</span>
                   </div>
+                  <!-- 运行统计信息 -->
+                  <div class="run-metrics" v-if="run.total_duration_ms !== null && run.total_duration_ms !== undefined || run.total_skill_tokens !== null || run.total_evaluator_tokens !== null">
+                    <span v-if="run.total_duration_ms !== null && run.total_duration_ms !== undefined" class="metric-item">
+                      <i class="metric-icon">⏱</i>
+                      {{ formatDuration(run.total_duration_ms) }}
+                    </span>
+                    <span v-if="run.total_skill_tokens !== null || run.total_evaluator_tokens !== null" class="metric-item">
+                      <i class="metric-icon">🔹</i>
+                      {{ formatNumber((run.total_skill_tokens || 0) + (run.total_evaluator_tokens || 0)) }}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -242,12 +253,12 @@
                 />
               </div>
               <el-table :data="evalStore.evalResults" stripe size="small" max-height="400">
-                <el-table-column label="用例编号" width="150">
+                <el-table-column label="用例编号" width="120">
                   <template #default="{ row }">
                     {{ row.case_uid || row.case_id }}
                   </template>
                 </el-table-column>
-                <el-table-column label="状态" width="90" align="center">
+                <el-table-column label="状态" width="80" align="center">
                   <template #default="{ row }">
                     <el-tooltip v-if="row.execution_error" :content="row.execution_error" placement="top">
                       <el-tag type="warning" size="small">执行失败</el-tag>
@@ -257,8 +268,36 @@
                     </el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column prop="actual_output" label="实际输出" show-overflow-tooltip />
-                <el-table-column label="操作" width="100" align="center">
+                <el-table-column label="时长" width="80" align="center">
+                  <template #default="{ row }">
+                    <span v-if="row.execution_duration !== null && row.execution_duration !== undefined" class="duration-text">
+                      {{ formatDuration(row.execution_duration) }}
+                    </span>
+                    <span v-else class="text-muted">-</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="技能Tokens" width="100" align="center">
+                  <template #default="{ row }">
+                    <span v-if="row.skill_tokens !== null && row.skill_tokens !== undefined" class="token-text">
+                      {{ formatNumber(row.skill_tokens) }}
+                    </span>
+                    <span v-else class="text-muted">-</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="评估器Tokens" width="110" align="center">
+                  <template #default="{ row }">
+                    <span v-if="row.evaluator_tokens !== null && row.evaluator_tokens !== undefined" class="token-text">
+                      {{ formatNumber(row.evaluator_tokens) }}
+                    </span>
+                    <span v-else class="text-muted">-</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="实际输出" min-width="150" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    <span class="output-text">{{ row.actual_output }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="100" align="center" fixed="right">
                   <template #default="{ row }">
                     <el-button link type="primary" size="small" @click="showResultDetail(row)">
                       详细对比
@@ -372,7 +411,11 @@
       :expected="currentCase?.expected_output || ''"
       :actual="currentResult?.actual_output || ''"
       :is-passed="currentResult?.is_passed || false"
+      :execution-error="currentResult?.execution_error"
       :evaluator-logs="currentResult?.evaluator_logs || []"
+      :execution-duration="currentResult?.execution_duration"
+      :skill-tokens="currentResult?.skill_tokens"
+      :evaluator-tokens="currentResult?.evaluator_tokens"
       @close="diffDialogVisible = false"
     />
 
@@ -587,6 +630,27 @@ function formatTime(dateStr: string): string {
 function formatJson(obj: any): string {
   if (!obj) return '-'
   return JSON.stringify(obj, null, 2)
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) {
+    return `${ms}ms`
+  } else if (ms < 60000) {
+    return `${(ms / 1000).toFixed(1)}s`
+  } else {
+    const minutes = Math.floor(ms / 60000)
+    const seconds = ((ms % 60000) / 1000).toFixed(0)
+    return `${minutes}m${seconds}s`
+  }
+}
+
+function formatNumber(num: number): string {
+  if (num >= 1000000) {
+    return `${(num / 1000000).toFixed(1)}M`
+  } else if (num >= 1000) {
+    return `${(num / 1000).toFixed(1)}K`
+  }
+  return num.toString()
 }
 
 function validateTemplateJson() {
@@ -1138,6 +1202,29 @@ async function saveEvaluatorsToTask() {
   margin-left: auto;
 }
 
+.run-metrics {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: #606266;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.metric-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background-color: #f5f7fa;
+  border-radius: 4px;
+}
+
+.metric-icon {
+  font-size: 11px;
+}
+
 .results-section {
   border-top: 1px solid #dcdfe6;
   padding-top: 20px;
@@ -1238,5 +1325,22 @@ async function saveEvaluatorsToTask() {
   color: #606266;
   background-color: #f5f7fa;
   border-radius: 4px;
+}
+
+.duration-text {
+  color: #409eff;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.token-text {
+  color: #67c23a;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.text-muted {
+  color: #c0c4cc;
+  font-size: 12px;
 }
 </style>

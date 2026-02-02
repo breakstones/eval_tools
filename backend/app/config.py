@@ -9,7 +9,12 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    """Application settings."""
+    """Application settings.
+
+    Default ports (see PORTS.config in project root):
+    - Backend: 8001
+    - Frontend: 5173
+    """
 
     # Application
     APP_NAME: str = "LLM Eval Studio"

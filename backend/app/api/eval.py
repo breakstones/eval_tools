@@ -252,6 +252,9 @@ async def get_eval_results(
             is_passed=result.is_passed,
             execution_error=getattr(result, 'execution_error', None),
             evaluator_logs=result.evaluator_logs_list,
+            execution_duration=getattr(result, 'execution_duration', None),
+            skill_tokens=getattr(result, 'skill_tokens', None),
+            evaluator_tokens=getattr(result, 'evaluator_tokens', None),
             created_at=result.created_at,
         )
         for result, case in results
@@ -280,6 +283,9 @@ async def get_eval_result(
         is_passed=result.is_passed,
         execution_error=getattr(result, 'execution_error', None),
         evaluator_logs=result.evaluator_logs_list,
+        execution_duration=getattr(result, 'execution_duration', None),
+        skill_tokens=getattr(result, 'skill_tokens', None),
+        evaluator_tokens=getattr(result, 'evaluator_tokens', None),
         created_at=result.created_at,
     )
 
@@ -306,6 +312,9 @@ async def get_eval_runs(
             started_at=r.started_at,
             completed_at=r.completed_at,
             error=r.error,
+            total_duration_ms=getattr(r, 'total_duration_ms', None),
+            total_skill_tokens=getattr(r, 'total_skill_tokens', None),
+            total_evaluator_tokens=getattr(r, 'total_evaluator_tokens', None),
         )
         for r in runs
     ]
@@ -330,6 +339,9 @@ async def get_eval_run(
         started_at=run.started_at,
         completed_at=run.completed_at,
         error=run.error,
+        total_duration_ms=getattr(run, 'total_duration_ms', None),
+        total_skill_tokens=getattr(run, 'total_skill_tokens', None),
+        total_evaluator_tokens=getattr(run, 'total_evaluator_tokens', None),
     )
 
 
@@ -491,6 +503,9 @@ async def get_run_results(
             is_passed=result.is_passed,
             execution_error=getattr(result, 'execution_error', None),
             evaluator_logs=result.evaluator_logs_list,
+            execution_duration=getattr(result, 'execution_duration', None),
+            skill_tokens=getattr(result, 'skill_tokens', None),
+            evaluator_tokens=getattr(result, 'evaluator_tokens', None),
             created_at=result.created_at,
         )
         for result, case in results

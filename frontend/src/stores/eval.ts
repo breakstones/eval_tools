@@ -212,6 +212,9 @@ export const useEvalStore = defineStore('eval', () => {
             is_passed: data.data.is_passed,
             execution_error: data.data.execution_error || null,
             evaluator_logs: data.data.evaluator_logs || [],
+            execution_duration: data.data.execution_duration || null,
+            skill_tokens: data.data.skill_tokens || null,
+            evaluator_tokens: data.data.evaluator_tokens || null,
             created_at: new Date().toISOString(),
           }
           evalResults.value.push(result)

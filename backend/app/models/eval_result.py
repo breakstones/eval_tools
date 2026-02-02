@@ -21,7 +21,11 @@ class EvalResult(Base):
         case_id: Foreign key to TestCase
         actual_output: Actual output from the LLM
         is_passed: Whether the test case passed evaluation
+        execution_error: Execution error message
         evaluator_logs: JSON string containing logs from each evaluator
+        execution_duration: Execution time in milliseconds
+        skill_tokens: Token usage for skill LLM calls (prompt + completion)
+        evaluator_tokens: Token usage for LLM evaluator calls (prompt + completion)
         created_at: Timestamp when the result was created
     """
 
@@ -51,6 +55,18 @@ class EvalResult(Base):
     is_passed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     execution_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 执行错误信息
     evaluator_logs: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    execution_duration: Mapped[Optional[int]] = mapped_column(
+        # 执行时长（毫秒）
+        nullable=True,
+    )
+    skill_tokens: Mapped[Optional[int]] = mapped_column(
+        # 技能LLM调用的token消耗
+        nullable=True,
+    )
+    evaluator_tokens: Mapped[Optional[int]] = mapped_column(
+        # LLM评估器的token消耗
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         default=datetime.utcnow,
         nullable=False,

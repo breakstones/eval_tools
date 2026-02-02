@@ -1,9 +1,39 @@
 """LLM API client for making asynchronous requests."""
 
 import json
-from typing import Any, Dict, Optional
+import time
+from typing import Any, Dict, Optional, Tuple
 
 import httpx
+
+
+class LlmCallResult:
+    """Result of an LLM API call."""
+
+    def __init__(
+        self,
+        content: Optional[str],
+        duration_ms: int,
+        prompt_tokens: Optional[int] = None,
+        completion_tokens: Optional[int] = None,
+        total_tokens: Optional[int] = None,
+    ):
+        """Initialize LLM call result.
+
+        Args:
+            content: Response content
+            duration_ms: Call duration in milliseconds
+            prompt_tokens: Prompt tokens used
+            completion_tokens: Completion tokens used
+            total_tokens: Total tokens used
+        """
+        self.content = content
+        self.duration_ms = duration_ms
+        self.prompt_tokens = prompt_tokens
+        self.completion_tokens = completion_tokens
+        self.total_tokens = total_tokens if total_tokens is not None else (
+            (prompt_tokens or 0) + (completion_tokens or 0)
+        )
 
 
 class LlmClient:
@@ -20,6 +50,7 @@ class LlmClient:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
+        self.model_code: str = ""  # Set when making a request
 
     async def call_llm(self, request_body: Dict[str, Any]) -> Optional[str]:
         """Call the LLM API with the given request body.
@@ -29,6 +60,23 @@ class LlmClient:
 
         Returns:
             LLM response text or None if request fails
+
+        Raises:
+            httpx.HTTPError: If the HTTP request fails
+        """
+        result = await self.call_llm_with_stats(request_body)
+        return result.content if result else None
+
+    async def call_llm_with_stats(
+        self, request_body: Dict[str, Any]
+    ) -> Optional[LlmCallResult]:
+        """Call the LLM API with the given request body and return statistics.
+
+        Args:
+            request_body: Request body to send to LLM API
+
+        Returns:
+            LlmCallResult with content, duration, and token usage, or None if request fails
 
         Raises:
             httpx.HTTPError: If the HTTP request fails
@@ -50,6 +98,8 @@ class LlmClient:
             "/api/chat",
         ]
 
+        start_time = time.time()
+
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             for endpoint in endpoints:
                 try:
@@ -57,11 +107,21 @@ class LlmClient:
                     response = await client.post(url, json=request_body, headers=headers)
 
                     if response.status_code == 200:
+                        duration_ms = int((time.time() - start_time) * 1000)
                         try:
                             data = response.json()
                         except Exception as e:
                             # Failed to parse JSON response
-                            return f"[JSON_PARSE_ERROR] {response.text[:500]}"
+                            return LlmCallResult(
+                                content=f"[JSON_PARSE_ERROR] {response.text[:500]}",
+                                duration_ms=duration_ms,
+                            )
+
+                        # Extract token usage if available
+                        usage = data.get("usage", {})
+                        prompt_tokens = usage.get("prompt_tokens")
+                        completion_tokens = usage.get("completion_tokens")
+                        total_tokens = usage.get("total_tokens")
 
                         # Try to extract response text from common response formats
                         # Use .get() to avoid KeyError
@@ -70,23 +130,71 @@ class LlmClient:
                             message = choices[0].get("message") or {}
                             content = message.get("content")
                             if content:
-                                return str(content)
+                                return LlmCallResult(
+                                    content=str(content),
+                                    duration_ms=duration_ms,
+                                    prompt_tokens=prompt_tokens,
+                                    completion_tokens=completion_tokens,
+                                    total_tokens=total_tokens,
+                                )
                         elif "output" in data:
-                            return str(data.get("output", ""))
+                            return LlmCallResult(
+                                content=str(data.get("output", "")),
+                                duration_ms=duration_ms,
+                                prompt_tokens=prompt_tokens,
+                                completion_tokens=completion_tokens,
+                                total_tokens=total_tokens,
+                            )
                         elif "response" in data:
-                            return str(data.get("response", ""))
+                            return LlmCallResult(
+                                content=str(data.get("response", "")),
+                                duration_ms=duration_ms,
+                                prompt_tokens=prompt_tokens,
+                                completion_tokens=completion_tokens,
+                                total_tokens=total_tokens,
+                            )
                         elif "text" in data:
-                            return str(data.get("text", ""))
+                            return LlmCallResult(
+                                content=str(data.get("text", "")),
+                                duration_ms=duration_ms,
+                                prompt_tokens=prompt_tokens,
+                                completion_tokens=completion_tokens,
+                                total_tokens=total_tokens,
+                            )
                         elif "content" in data:
-                            return str(data.get("content", ""))
+                            return LlmCallResult(
+                                content=str(data.get("content", "")),
+                                duration_ms=duration_ms,
+                                prompt_tokens=prompt_tokens,
+                                completion_tokens=completion_tokens,
+                                total_tokens=total_tokens,
+                            )
                         elif "message" in data:
                             msg = data.get("message", {})
                             if isinstance(msg, dict):
-                                return str(msg.get("content", str(msg)))
-                            return str(msg)
+                                return LlmCallResult(
+                                    content=str(msg.get("content", str(msg))),
+                                    duration_ms=duration_ms,
+                                    prompt_tokens=prompt_tokens,
+                                    completion_tokens=completion_tokens,
+                                    total_tokens=total_tokens,
+                                )
+                            return LlmCallResult(
+                                content=str(msg),
+                                duration_ms=duration_ms,
+                                prompt_tokens=prompt_tokens,
+                                completion_tokens=completion_tokens,
+                                total_tokens=total_tokens,
+                            )
                         else:
                             # Return raw JSON as fallback
-                            return json.dumps(data, ensure_ascii=False)
+                            return LlmCallResult(
+                                content=json.dumps(data, ensure_ascii=False),
+                                duration_ms=duration_ms,
+                                prompt_tokens=prompt_tokens,
+                                completion_tokens=completion_tokens,
+                                total_tokens=total_tokens,
+                            )
 
                 except httpx.HTTPError as e:
                     print(f"[LLMClient] HTTP error for {endpoint}: {e}")
@@ -103,17 +211,40 @@ class LlmClient:
                     headers=headers,
                 )
                 if response.status_code == 200:
+                    duration_ms = int((time.time() - start_time) * 1000)
                     try:
                         data = response.json()
+
+                        # Extract token usage if available
+                        usage = data.get("usage", {})
+                        prompt_tokens = usage.get("prompt_tokens")
+                        completion_tokens = usage.get("completion_tokens")
+                        total_tokens = usage.get("total_tokens")
+
                         choices = data.get("choices")
                         if choices and len(choices) > 0:
                             message = choices[0].get("message") or {}
                             content = message.get("content")
                             if content:
-                                return str(content)
-                        return json.dumps(data, ensure_ascii=False)
+                                return LlmCallResult(
+                                    content=str(content),
+                                    duration_ms=duration_ms,
+                                    prompt_tokens=prompt_tokens,
+                                    completion_tokens=completion_tokens,
+                                    total_tokens=total_tokens,
+                                )
+                        return LlmCallResult(
+                            content=json.dumps(data, ensure_ascii=False),
+                            duration_ms=duration_ms,
+                            prompt_tokens=prompt_tokens,
+                            completion_tokens=completion_tokens,
+                            total_tokens=total_tokens,
+                        )
                     except Exception as e:
-                        return f"[PARSE_ERROR] {response.text[:500]}"
+                        return LlmCallResult(
+                            content=f"[PARSE_ERROR] {response.text[:500]}",
+                            duration_ms=duration_ms,
+                        )
             except httpx.HTTPError as e:
                 print(f"[LLMClient] Direct URL error: {e}")
             except Exception as e:

@@ -514,6 +514,12 @@ class EvalService:
         )
         renderer = TemplateRenderer()
 
+        # Pre-fetch task evaluators (cache for all cases to avoid repeated queries)
+        task_evaluators = await self._get_task_evaluators_with_clients(task_id)
+        # If no evaluators configured, use default exact match
+        if not task_evaluators:
+            task_evaluators = [(ExactMatchEvaluator(), None, "精确匹配")]
+
         # Queue to maintain result order
         result_queue: asyncio.Queue[Tuple[int, Dict]] = asyncio.Queue()
 
@@ -534,7 +540,12 @@ class EvalService:
 
         async def evaluate_single_case(index: int, case: TestCase) -> None:
             """Evaluate a single test case and put result in queue."""
+            case_start_time = asyncio.get_event_loop().time()
+            print(f"[DEBUG] Case {index} ({case.case_uid}) started at {case_start_time:.3f}")
             async with semaphore:
+                semaphore_acquire_time = asyncio.get_event_loop().time()
+                wait_time = semaphore_acquire_time - case_start_time
+                print(f"[DEBUG] Case {index} ({case.case_uid}) acquired semaphore after {wait_time*1000:.1f}ms wait")
                 # Prepare context
                 context = {
                     "model_name": model.model_code,
@@ -558,12 +569,23 @@ class EvalService:
                     context,
                 )
 
-                # Call LLM
+                # Call LLM and track statistics
                 actual_output = None
                 execution_error = None
+                execution_duration = None
+                skill_tokens = None
+                evaluator_tokens = None
+                eval_start_time = None  # Track total evaluation start time
+
+                # Record start time before calling LLM
+                eval_start_time = asyncio.get_event_loop().time()
+
                 try:
-                    response = await llm_client.call_llm(rendered_request)
-                    actual_output = response
+                    llm_result = await llm_client.call_llm_with_stats(rendered_request)
+                    if llm_result:
+                        actual_output = llm_result.content
+                        execution_duration = llm_result.duration_ms
+                        skill_tokens = llm_result.total_tokens
                 except Exception as e:
                     execution_error = str(e)
 
@@ -575,13 +597,6 @@ class EvalService:
                     # Format JSON outputs for better comparison
                     formatted_expected = format_json_if_valid(case.expected_output or "")
                     formatted_actual = format_json_if_valid(actual_output)
-
-                    # Get task evaluators with their LLM clients
-                    task_evaluators = await self._get_task_evaluators_with_clients(task_id)
-
-                    # If no evaluators configured, use default exact match
-                    if not task_evaluators:
-                        task_evaluators = [(ExactMatchEvaluator(), None, "精确匹配")]
 
                     # Run all evaluators (any fail means overall fail)
                     is_passed = True
@@ -611,7 +626,17 @@ class EvalService:
                                     "temperature": 0.1,
                                 }
                                 try:
-                                    response = await eval_llm_client.call_llm(request)
+                                    eval_result = await eval_llm_client.call_llm_with_stats(request)
+                                    if eval_result:
+                                        # Accumulate evaluator tokens
+                                        if eval_result.total_tokens:
+                                            if evaluator_tokens is None:
+                                                evaluator_tokens = 0
+                                            evaluator_tokens += eval_result.total_tokens
+                                        response = eval_result.content
+                                    else:
+                                        response = None
+
                                     import json
                                     from app.utils.json_repair import JsonRepair
                                     try:
@@ -655,20 +680,27 @@ class EvalService:
                     # Execution failed
                     is_passed = False
 
+                # Calculate total execution duration (skill LLM + all evaluators)
+                if eval_start_time is not None:
+                    loop_time = asyncio.get_event_loop().time()
+                    total_duration_ms = int((loop_time - eval_start_time) * 1000)
+                    # If we already have skill LLM duration, use total instead
+                    execution_duration = total_duration_ms
+
                 # Put result in queue (use formatted outputs)
+                case_end_time = asyncio.get_event_loop().time()
+                total_case_time = (case_end_time - case_start_time) * 1000
+                print(f"[DEBUG] Case {index} ({case.case_uid}) completed at {case_end_time:.3f}, total time: {total_case_time:.1f}ms")
                 await result_queue.put((index, {
                     "case": case,
                     "actual_output": formatted_actual,
                     "is_passed": is_passed,
                     "execution_error": execution_error,
                     "evaluator_logs": evaluator_logs,
+                    "execution_duration": execution_duration,
+                    "skill_tokens": skill_tokens,
+                    "evaluator_tokens": evaluator_tokens,
                 }))
-
-        # Create all evaluation tasks
-        tasks = [
-            evaluate_single_case(index, case)
-            for index, case in enumerate(cases, start=1)
-        ]
 
         # Create a consumer coroutine to process results in order
         async def result_consumer():
@@ -698,6 +730,9 @@ class EvalService:
                         is_passed=next_result["is_passed"],
                         execution_error=next_result["execution_error"],
                         evaluator_logs=json.dumps(next_result["evaluator_logs"]),
+                        execution_duration=next_result.get("execution_duration"),
+                        skill_tokens=next_result.get("skill_tokens"),
+                        evaluator_tokens=next_result.get("evaluator_tokens"),
                     )
                     self.session.add(result)
                     await self.session.flush()
@@ -715,6 +750,9 @@ class EvalService:
                             "actual_output": next_result["actual_output"],
                             "execution_error": next_result["execution_error"],
                             "evaluator_logs": next_result["evaluator_logs"],
+                            "execution_duration": next_result.get("execution_duration"),
+                            "skill_tokens": next_result.get("skill_tokens"),
+                            "evaluator_tokens": next_result.get("evaluator_tokens"),
                         },
                     )
 
@@ -728,8 +766,12 @@ class EvalService:
                     next_expected_index += 1
 
         # Start all evaluation tasks and consumer task
-        evaluation_tasks = [asyncio.create_task(task) for task in tasks]
+        # Important: create all tasks first to ensure they start immediately and run concurrently
+        evaluation_tasks = [asyncio.create_task(evaluate_single_case(index, case))
+                            for index, case in enumerate(cases, start=1)]
         consumer_task = asyncio.create_task(result_consumer())
+
+        print(f"[DEBUG] Started {len(evaluation_tasks)} evaluation tasks with concurrency={concurrency}")
 
         # Wait for all evaluation tasks to complete
         await asyncio.gather(*evaluation_tasks)
@@ -737,15 +779,40 @@ class EvalService:
         # Wait for consumer to finish processing all results
         await consumer_task
 
+        # Calculate statistics from results
+        # Get all results for this run to calculate token totals
+        results_query = await self.session.execute(
+            select(EvalResult).where(EvalResult.run_id == run_id)
+        )
+        all_results = results_query.scalars().all()
+
+        total_skill_tokens = sum(r.skill_tokens or 0 for r in all_results)
+        total_evaluator_tokens = sum(r.evaluator_tokens or 0 for r in all_results)
+
         # Update run status
         run.status = "COMPLETED"
         run.completed_at = datetime.utcnow()
+
+        # Calculate total duration in milliseconds
+        if run.started_at and run.completed_at:
+            duration_delta = run.completed_at - run.started_at
+            total_duration_ms = int(duration_delta.total_seconds() * 1000)
+        else:
+            total_duration_ms = None
+
+        run.total_duration_ms = total_duration_ms
+        run.total_skill_tokens = total_skill_tokens
+        run.total_evaluator_tokens = total_evaluator_tokens
+
         pass_rate = (passed / total * 100) if total > 0 else 0.0
         summary = {
             "total": total,
             "passed": passed,
             "failed": failed,
             "pass_rate": pass_rate,
+            "total_duration_ms": total_duration_ms,
+            "total_skill_tokens": total_skill_tokens,
+            "total_evaluator_tokens": total_evaluator_tokens,
         }
         run.summary = json.dumps(summary)
 

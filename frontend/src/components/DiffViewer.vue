@@ -9,9 +9,41 @@
       <!-- 1. 评测结果 -->
       <div class="result-header">
         <span class="result-label">评测结果：</span>
-        <el-tag :type="isPassed ? 'success' : 'danger'" size="large">
-          {{ isPassed ? '通过' : '失败' }}
+        <el-tag v-if="executionError" type="warning" size="large">失败</el-tag>
+        <el-tag v-else :type="isPassed ? 'success' : 'danger'" size="large">
+          {{ isPassed ? '通过' : '不通过' }}
         </el-tag>
+      </div>
+
+      <!-- 1.5 统计信息 -->
+      <div class="stats-section">
+        <div class="section-title">执行统计</div>
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div class="stat-label">执行时长</div>
+            <div class="stat-value duration-text">
+              {{ executionDuration !== null && executionDuration !== undefined ? formatDuration(executionDuration) : '-' }}
+            </div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">技能 Tokens</div>
+            <div class="stat-value token-text">
+              {{ skillTokens !== null && skillTokens !== undefined ? formatNumber(skillTokens) : '-' }}
+            </div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">评估器 Tokens</div>
+            <div class="stat-value token-text">
+              {{ evaluatorTokens !== null && evaluatorTokens !== undefined ? formatNumber(evaluatorTokens) : '-' }}
+            </div>
+          </div>
+          <div class="stat-item" v-if="totalTokens !== null">
+            <div class="stat-label">总 Tokens</div>
+            <div class="stat-value total-text">
+              {{ formatNumber(totalTokens) }}
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- 2. 评估器列表 -->
@@ -25,7 +57,7 @@
                 <div class="evaluator-name">{{ log.evaluator }}</div>
                 <div class="evaluator-divider"></div>
                 <el-tag :type="log.passed ? 'success' : 'danger'" size="small">
-                  {{ log.passed ? '通过' : '失败' }}
+                  {{ log.passed ? '通过' : '不通过' }}
                 </el-tag>
               </div>
             </div>
@@ -64,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { diff_match_patch, DIFF_DELETE, DIFF_INSERT, DIFF_EQUAL } from 'diff-match-patch'
 
 interface Props {
@@ -72,11 +104,18 @@ interface Props {
   expected: string
   actual: string
   isPassed: boolean
+  executionError?: string | null
   evaluatorLogs?: Array<{ evaluator: string; passed: boolean; reason?: string }>
+  executionDuration?: number | null
+  skillTokens?: number | null
+  evaluatorTokens?: number | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
   evaluatorLogs: () => [],
+  executionDuration: null,
+  skillTokens: null,
+  evaluatorTokens: null,
 })
 
 const emit = defineEmits<{
@@ -86,6 +125,35 @@ const emit = defineEmits<{
 const expectedHtml = ref('')
 const actualHtml = ref('')
 const dmp = new diff_match_patch()
+
+// 计算总 token 消耗
+const totalTokens = computed(() => {
+  const skill = props.skillTokens || 0
+  const evaluator = props.evaluatorTokens || 0
+  if (skill === 0 && evaluator === 0) return null
+  return skill + evaluator
+})
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) {
+    return `${ms}ms`
+  } else if (ms < 60000) {
+    return `${(ms / 1000).toFixed(1)}s`
+  } else {
+    const minutes = Math.floor(ms / 60000)
+    const seconds = ((ms % 60000) / 1000).toFixed(0)
+    return `${minutes}m${seconds}s`
+  }
+}
+
+function formatNumber(num: number): string {
+  if (num >= 1000000) {
+    return `${(num / 1000000).toFixed(1)}M`
+  } else if (num >= 1000) {
+    return `${(num / 1000).toFixed(1)}K`
+  }
+  return num.toString()
+}
 
 function escapeHtml(text: string): string {
   return text
@@ -163,6 +231,53 @@ watch(
   font-size: 16px;
   font-weight: 600;
   color: #303133;
+}
+
+/* 统计信息 */
+.stats-section {
+  margin-bottom: 20px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+  padding: 12px;
+  background-color: #fafafa;
+  border-radius: 6px;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px;
+  background-color: #fff;
+  border-radius: 4px;
+  border: 1px solid #ebeef5;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.duration-text {
+  color: #409eff;
+}
+
+.token-text {
+  color: #67c23a;
+}
+
+.total-text {
+  color: #e6a23c;
 }
 
 /* 评估器列表 */
