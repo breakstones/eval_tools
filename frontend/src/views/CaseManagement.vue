@@ -18,6 +18,7 @@
 
           <el-table
             :data="casesStore.caseSets"
+            height="100%"
             @row-click="selectCaseSet"
             highlight-current-row
             :show-header="false"
@@ -79,6 +80,7 @@
           <el-table
             :data="casesStore.testCases"
             stripe
+            height="100%"
             @selection-change="handleSelectionChange"
           >
             <el-table-column type="selection" width="55" />
@@ -367,6 +369,48 @@ async function handleExport(row: CaseSet) {
 <style scoped>
 .case-management {
   padding: 20px;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  gap: 20px;
+}
+
+.case-management .el-row {
+  height: 100%;
+  width: 100%;
+  margin: 0 !important;
+}
+
+.case-management .el-col {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.case-management .el-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.case-management .el-card :deep(.el-card__body) {
+  flex: 1;
+  overflow: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.case-management .el-card :deep(.el-card__body)::-webkit-scrollbar {
+  display: none;
+}
+
+.case-management :deep(.el-table__body-wrapper) {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.case-management :deep(.el-table__body-wrapper)::-webkit-scrollbar {
+  display: none;
 }
 
 .card-header {

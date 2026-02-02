@@ -471,6 +471,17 @@ onMounted(async () => {
 <style scoped>
 .evaluator-management {
   padding: 20px;
+  height: 100%;
+  overflow: hidden;
+}
+
+.evaluator-management :deep(*) {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.evaluator-management :deep(*)::-webkit-scrollbar {
+  display: none;
 }
 
 .header-card {

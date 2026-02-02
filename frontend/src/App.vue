@@ -38,6 +38,7 @@ const currentPath = computed(() => route.path)
 }
 
 .app-header {
+  height: 60px;
   background-color: #409eff;
   color: white;
   padding: 0 20px;
@@ -79,8 +80,16 @@ const currentPath = computed(() => route.path)
 }
 
 .app-main {
+  flex: 1;
   background-color: #f5f7fa;
   overflow-y: auto;
+  /* 隐藏滚动条但保持滚动功能 */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+.app-main::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
 }
 </style>
 
@@ -91,11 +100,18 @@ const currentPath = computed(() => route.path)
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 #app {
   height: 100vh;
+  overflow: hidden;
 }
 </style>

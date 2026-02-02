@@ -18,9 +18,6 @@
               :value="task.id"
             >
               <span>{{ getTaskLabel(task) }}</span>
-              <el-tag :type="getStatusType(task.status)" size="small" style="margin-left: 10px">
-                {{ getStatusText(task.status) }}
-              </el-tag>
             </el-option>
           </el-select>
         </div>
@@ -177,6 +174,7 @@
             <template #header>
               <span>运行历史与结果</span>
             </template>
+            <div class="results-area-content">
 
             <!-- Progress when running -->
             <div v-if="evalStore.isRunning" class="progress-section">
@@ -194,7 +192,7 @@
             <div class="runs-section">
               <div class="section-title">运行记录</div>
               <el-empty v-if="!evalStore.evalRuns.length" description="暂无运行记录" />
-              <div v-else class="runs-list">
+              <div v-else class="runs-list" @wheel.prevent="handleRunsWheel">
                 <div
                   v-for="run in evalStore.evalRuns"
                   :key="run.id"
@@ -202,31 +200,35 @@
                   :class="{ active: selectedRunId === run.id }"
                   @click="selectRun(run)"
                 >
-                  <div class="run-header">
-                    <span class="run-number">第 {{ run.run_number }} 次</span>
-                    <span class="run-time">{{ formatTime(run.started_at) }}</span>
-                    <el-tag :type="getStatusType(run.status)" size="small">
-                      {{ getStatusText(run.status) }}
-                    </el-tag>
+                  <!-- 顶部行：执行次数 + 状态图标 -->
+                  <div class="run-header-row">
+                    <span class="run-number">#{{ run.run_number }}</span>
+                    <div class="run-status-icon" :class="getStatusIconClass(run.status)">
+                      <el-icon><component :is="getStatusIcon(run.status)" /></el-icon>
+                    </div>
                   </div>
+
+                  <!-- 第一行：用例统计 + 通过率 -->
                   <div class="run-stats" v-if="run.summary">
-                    <span class="stat-passed">{{ run.summary.passed }}</span>
-                    <span class="stat-divider">/</span>
-                    <span class="stat-failed">{{ run.summary.failed }}</span>
-                    <span class="stat-divider">/</span>
-                    <span class="stat-total">{{ run.summary.total }}</span>
-                    <span class="stat-rate">{{ run.summary.pass_rate.toFixed(1) }}%</span>
+                    <div class="stats-left">
+                      <span class="stat-passed">{{ run.summary.passed }}</span>
+                      <span class="stat-divider">/</span>
+                      <span class="stat-failed">{{ run.summary.failed }}</span>
+                      <span class="stat-divider">/</span>
+                      <span class="stat-total">{{ run.summary.total }}</span>
+                    </div>
+                    <div class="stat-rate">{{ run.summary.pass_rate.toFixed(1) }}%</div>
                   </div>
-                  <!-- 运行统计信息 -->
-                  <div class="run-metrics" v-if="run.total_duration_ms !== null && run.total_duration_ms !== undefined || run.total_skill_tokens !== null || run.total_evaluator_tokens !== null">
+
+                  <!-- 第二行：耗时、tokens、开始时间 -->
+                  <div class="run-metrics">
                     <span v-if="run.total_duration_ms !== null && run.total_duration_ms !== undefined" class="metric-item">
-                      <i class="metric-icon">⏱</i>
-                      {{ formatDuration(run.total_duration_ms) }}
+                      ⏱ {{ formatDuration(run.total_duration_ms) }}
                     </span>
                     <span v-if="run.total_skill_tokens !== null || run.total_evaluator_tokens !== null" class="metric-item">
-                      <i class="metric-icon">🔹</i>
-                      {{ formatNumber((run.total_skill_tokens || 0) + (run.total_evaluator_tokens || 0)) }}
+                      🔹 {{ formatNumber((run.total_skill_tokens || 0) + (run.total_evaluator_tokens || 0)) }}
                     </span>
+                    <span class="metric-item metric-time">{{ formatTimeShort(run.started_at) }}</span>
                   </div>
                 </div>
               </div>
@@ -242,7 +244,7 @@
                     <span style="color: #67c23a">✓</span>
                   </template>
                 </el-statistic>
-                <el-statistic title="失败" :value="evalStore.currentRun.summary?.failed || 0">
+                <el-statistic title="不通过" :value="evalStore.currentRun.summary?.failed || 0">
                   <template #suffix>
                     <span style="color: #f56c6c">✗</span>
                   </template>
@@ -252,7 +254,8 @@
                   :value="((evalStore.currentRun.summary?.pass_rate || 0)).toFixed(1) + '%'"
                 />
               </div>
-              <el-table :data="evalStore.evalResults" stripe size="small" max-height="400">
+              <div class="table-container">
+                <el-table :data="evalStore.evalResults" stripe size="small" height="100%">
                 <el-table-column label="用例编号" width="120">
                   <template #default="{ row }">
                     {{ row.case_uid || row.case_id }}
@@ -305,6 +308,8 @@
                   </template>
                 </el-table-column>
               </el-table>
+              </div>
+            </div>
             </div>
           </el-card>
         </el-col>
@@ -315,7 +320,7 @@
     <el-empty v-else description="请选择或创建一个评测任务" />
 
     <!-- Create Task Dialog -->
-    <el-dialog v-model="taskDialogVisible" title="创建评测任务" width="500px">
+    <el-dialog v-model="taskDialogVisible" title="创建评测任务" width="500px" :lock-scroll="true">
       <el-form :model="taskForm" label-width="100px">
         <el-form-item label="任务名称" required>
           <el-input v-model="taskForm.name" placeholder="请输入任务名称" style="width: 100%" />
@@ -359,7 +364,7 @@
     </el-dialog>
 
     <!-- Test Template Dialog -->
-    <el-dialog v-model="testDialogVisible" title="测试请求模板" width="900px">
+    <el-dialog v-model="testDialogVisible" title="测试请求模板" width="900px" :lock-scroll="true">
       <el-form :model="testForm" label-width="100px">
         <el-form-item label="测试用例">
           <el-select v-model="testForm.case_id" placeholder="选择用例（可选）" style="width: 100%" clearable>
@@ -424,6 +429,7 @@
       v-model="evaluatorDialogVisible"
       title="配置评估器"
       width="600px"
+      :lock-scroll="true"
       @open="handleEvaluatorDialogOpen"
     >
       <div class="evaluator-selector-content">
@@ -465,7 +471,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, Clock, CircleCheck, CircleClose } from '@element-plus/icons-vue'
 import { useEvalStore } from '@/stores/eval'
 import { useCasesStore } from '@/stores/cases'
 import { useEvaluatorStore } from '@/stores/evaluator'
@@ -651,6 +657,40 @@ function formatNumber(num: number): string {
     return `${(num / 1000).toFixed(1)}K`
   }
   return num.toString()
+}
+
+function handleRunsWheel(event: WheelEvent) {
+  const target = event.currentTarget as HTMLElement
+  target.scrollLeft += event.deltaY
+}
+
+function formatTimeShort(dateStr: string): string {
+  const date = new Date(dateStr)
+  const month = (date.getMonth() + 1).toString().padStart(2, '0')
+  const day = date.getDate().toString().padStart(2, '0')
+  const hours = date.getHours().toString().padStart(2, '0')
+  const minutes = date.getMinutes().toString().padStart(2, '0')
+  return `${month}-${day} ${hours}:${minutes}`
+}
+
+function getPassRateClass(passRate: number): string {
+  if (passRate >= 80) return 'rate-high'
+  if (passRate >= 60) return 'rate-medium'
+  return 'rate-low'
+}
+
+function getStatusIcon(status: string) {
+  const icons: Record<string, any> = {
+    PENDING: Clock,
+    RUNNING: Clock,
+    COMPLETED: CircleCheck,
+    FAILED: CircleClose,
+  }
+  return icons[status] || Clock
+}
+
+function getStatusIconClass(status: string) {
+  return `status-icon-${status.toLowerCase()}`
 }
 
 function validateTemplateJson() {
@@ -978,7 +1018,8 @@ async function saveEvaluatorsToTask() {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  height: calc(100vh - 40px);
+  height: 100%;
+  overflow: hidden;
 }
 
 .task-selector-section {
@@ -1038,7 +1079,14 @@ async function saveEvaluatorsToTask() {
 
 .main-content .el-card :deep(.el-card__body) {
   flex: 1;
-  overflow: auto;
+  overflow: hidden;
+  /* 隐藏滚动条但保持滚动功能 */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+.main-content .el-card :deep(.el-card__body)::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
 }
 
 /* Task Info Card */
@@ -1125,118 +1173,219 @@ async function saveEvaluatorsToTask() {
 }
 
 .runs-section {
+  flex-shrink: 0;
   margin-bottom: 20px;
+  height: 160px;
 }
 
 .runs-list {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 180px;
-  overflow-y: auto;
+  flex-direction: row;
+  gap: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 0;
+}
+
+.runs-list::-webkit-scrollbar {
+  height: 6px;
+}
+
+.runs-list::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.runs-list::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.runs-list::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
 }
 
 .run-item {
+  flex-shrink: 0;
+  width: 240px;
   border: 1px solid #dcdfe6;
-  border-radius: 4px;
-  padding: 10px;
+  border-radius: 8px;
+  padding: 12px;
   cursor: pointer;
   transition: all 0.2s;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
 }
 
 .run-item:hover {
   border-color: #409eff;
   background: #ecf5ff;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.15);
 }
 
 .run-item.active {
   border-color: #409eff;
   background: #ecf5ff;
+  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2);
 }
 
-.run-header {
+.run-header-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 6px;
-  gap: 10px;
-}
-
-.run-number {
-  font-weight: 500;
-}
-
-.run-header .run-time {
-  font-size: 12px;
-  color: #909399;
-  margin-left: auto;
+  margin-bottom: -6px;
 }
 
 .run-stats {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 4px;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.run-stats .stat-passed {
-  color: #67c23a;
-}
-
-.run-stats .stat-failed {
-  color: #f56c6c;
-}
-
-.run-stats .stat-total {
-  color: #303133;
-}
-
-.run-stats .stat-divider {
-  color: #909399;
-  margin: 0 2px;
-}
-
-.run-stats .stat-rate {
-  color: #909399;
-  margin-left: auto;
 }
 
 .run-metrics {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 12px;
-  color: #606266;
-  margin-top: 6px;
   flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: #909399;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.run-number {
+  font-size: 14px;
+  font-weight: 600;
+  color: #606266;
+}
+
+.run-status-icon {
+  font-size: 16px;
+}
+
+.run-status-icon.status-icon-pending {
+  color: #909399;
+}
+
+.run-status-icon.status-icon-running {
+  color: #e6a23c;
+}
+
+.run-status-icon.status-icon-completed {
+  color: #67c23a;
+}
+
+.run-status-icon.status-icon-failed {
+  color: #f56c6c;
+}
+
+.stats-left {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.stats-left .stat-number {
+  font-size: 16px;
+  font-weight: 600;
+  color: #606266;
+}
+
+.stats-left .stat-passed {
+  font-size: 16px;
+  font-weight: 600;
+  color: #67c23a;
+  line-height: 1;
+}
+
+.stats-left .stat-divider {
+  font-size: 16px;
+  color: #dcdfe6;
+  font-weight: 600;
+}
+
+.stats-left .stat-failed {
+  font-size: 16px;
+  font-weight: 600;
+  color: #f56c6c;
+  line-height: 1;
+}
+
+.stats-left .stat-total {
+  font-size: 16px;
+  color: #909399;
+  font-weight: 600;
+}
+
+.stat-rate {
+  font-size: 16px;
+  font-weight: 600;
+  color: #606266;
+}
+
+.run-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: #909399;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .metric-item {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
-  background-color: #f5f7fa;
-  border-radius: 4px;
+  gap: 2px;
 }
 
-.metric-icon {
-  font-size: 11px;
+.metric-item.metric-time {
+  margin-left: auto;
+  color: #909399;
 }
 
 .results-section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   border-top: 1px solid #dcdfe6;
   padding-top: 20px;
+  overflow: hidden;
 }
 
 .summary-bar {
+  flex-shrink: 0;
   display: flex;
   gap: 30px;
   margin-bottom: 15px;
   padding: 15px;
   background: #f5f7fa;
   border-radius: 4px;
+}
+
+.table-container {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.table-container :deep(.el-table__body-wrapper) {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.table-container :deep(.el-table__body-wrapper)::-webkit-scrollbar {
+  display: none;
+}
+
+.results-area-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 .progress-section {

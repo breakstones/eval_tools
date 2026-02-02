@@ -3,6 +3,10 @@
     :model-value="visible"
     title="评测详细结果"
     width="900px"
+    :lock-scroll="true"
+    :close-on-click-modal="true"
+    :destroy-on-close="true"
+    align-center
     @close="$emit('close')"
   >
     <div class="result-container">
@@ -214,6 +218,14 @@ watch(
 <style scoped>
 .result-container {
   padding: 5px 0;
+  max-height: 70vh;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.result-container::-webkit-scrollbar {
+  display: none;
 }
 
 /* 评测结果头部 */
