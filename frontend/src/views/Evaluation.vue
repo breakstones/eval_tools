@@ -239,7 +239,10 @@
 
             <!-- Results Table -->
             <div class="results-section" v-if="selectedRunId">
-              <div class="section-title">评测结果</div>
+              <div class="results-header">
+                <span class="section-title">评测结果</span>
+                <el-checkbox v-model="showFailedOnly" label="仅查看不通过" size="small" />
+              </div>
               <div v-if="evalStore.currentRun && evalStore.currentRun.status === 'COMPLETED'" class="summary-bar">
                 <el-statistic title="总用例数" :value="evalStore.currentRun.summary?.total || 0" />
                 <el-statistic title="通过" :value="evalStore.currentRun.summary?.passed || 0">
@@ -258,7 +261,7 @@
                 />
               </div>
               <div class="table-container">
-                <el-table :data="evalStore.evalResults" stripe size="small" height="100%">
+                <el-table :data="filteredEvalResults" stripe size="small" height="100%">
                 <el-table-column label="用例编号" width="120">
                   <template #default="{ row }">
                     {{ row.case_uid || row.case_id }}
@@ -531,6 +534,9 @@ const selectedRunId = ref<string | null>(null)
 const currentTask = ref<EvalTask | null>(null)
 const currentCaseSet = ref<any>(null)
 
+// Filter state
+const showFailedOnly = ref(false)
+
 // Form data
 const taskForm = ref({
   name: '',
@@ -551,6 +557,13 @@ const progressPercentage = computed(() => {
 const progressStatus = computed(() => {
   if (progressPercentage.value === 100) return 'success'
   return undefined
+})
+
+const filteredEvalResults = computed(() => {
+  if (!showFailedOnly.value) {
+    return evalStore.evalResults
+  }
+  return evalStore.evalResults.filter(result => !result.is_passed || result.execution_error)
 })
 
 const groupedModels = computed(() => {
@@ -1377,6 +1390,13 @@ async function saveEvaluatorsToTask() {
   border-top: 1px solid #dcdfe6;
   padding-top: 20px;
   overflow: hidden;
+}
+
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
 }
 
 .summary-bar {
