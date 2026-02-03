@@ -424,6 +424,7 @@
       :execution-duration="currentResult?.execution_duration"
       :skill-tokens="currentResult?.skill_tokens"
       :evaluator-tokens="currentResult?.evaluator_tokens"
+      :case-uid="currentResult?.case_uid || currentCase?.case_uid || null"
       @close="diffDialogVisible = false"
     />
 

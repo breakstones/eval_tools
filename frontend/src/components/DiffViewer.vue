@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    title="评测详细结果"
+    :title="dialogTitle"
     width="900px"
     :lock-scroll="true"
     :close-on-click-modal="true"
@@ -79,13 +79,35 @@
         <el-row :gutter="16">
           <el-col :span="12">
             <div class="output-group">
-              <div class="output-label">预期输出</div>
+              <div class="output-label-wrapper">
+                <span class="output-label">预期输出</span>
+                <el-button
+                  link
+                  type="primary"
+                  size="small"
+                  @click="copyToClipboard(props.expected, '预期输出')"
+                >
+                  <el-icon><DocumentCopy /></el-icon>
+                  复制
+                </el-button>
+              </div>
               <div class="output-content expected-content" v-html="expectedHtml"></div>
             </div>
           </el-col>
           <el-col :span="12">
             <div class="output-group">
-              <div class="output-label">实际输出</div>
+              <div class="output-label-wrapper">
+                <span class="output-label">实际输出</span>
+                <el-button
+                  link
+                  type="primary"
+                  size="small"
+                  @click="copyToClipboard(props.actual, '实际输出')"
+                >
+                  <el-icon><DocumentCopy /></el-icon>
+                  复制
+                </el-button>
+              </div>
               <div class="output-content actual-content" v-html="actualHtml"></div>
             </div>
           </el-col>
@@ -101,6 +123,8 @@
 
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
+import { ElMessage } from 'element-plus'
+import { DocumentCopy } from '@element-plus/icons-vue'
 import { diff_match_patch, DIFF_DELETE, DIFF_INSERT, DIFF_EQUAL } from 'diff-match-patch'
 
 interface Props {
@@ -113,6 +137,7 @@ interface Props {
   executionDuration?: number | null
   skillTokens?: number | null
   evaluatorTokens?: number | null
+  caseUid?: string | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -120,6 +145,12 @@ const props = withDefaults(defineProps<Props>(), {
   executionDuration: null,
   skillTokens: null,
   evaluatorTokens: null,
+  caseUid: null,
+})
+
+// 计算弹窗标题
+const dialogTitle = computed(() => {
+  return props.caseUid ? `评测详细结果 - ${props.caseUid}` : '评测详细结果'
 })
 
 const emit = defineEmits<{
@@ -157,6 +188,28 @@ function formatNumber(num: number): string {
     return `${(num / 1000).toFixed(1)}K`
   }
   return num.toString()
+}
+
+async function copyToClipboard(text: string, label: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success(`${label}已复制到剪贴板`)
+  } catch (err) {
+    // 降级方案：使用传统的复制方法
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    try {
+      document.execCommand('copy')
+      ElMessage.success(`${label}已复制到剪贴板`)
+    } catch (e) {
+      ElMessage.error('复制失败')
+    }
+    document.body.removeChild(textarea)
+  }
 }
 
 function escapeHtml(text: string): string {
@@ -397,11 +450,21 @@ watch(
   margin-bottom: 12px;
 }
 
+.output-label-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
 .output-label {
   font-size: 13px;
   font-weight: 500;
   color: #606266;
-  margin-bottom: 8px;
+}
+
+.copy-btn {
+  font-size: 12px;
 }
 
 .output-content {
