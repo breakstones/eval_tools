@@ -742,6 +742,7 @@ class EvalService:
                         task_id,
                         "result",
                         {
+                            "run_id": run_id,
                             "index": next_expected_index,
                             "total": total,
                             "case_id": case.id,

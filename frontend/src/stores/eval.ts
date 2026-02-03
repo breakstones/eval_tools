@@ -7,6 +7,9 @@ export const useEvalStore = defineStore('eval', () => {
   // State
   const evalTasks = ref<EvalTask[]>([])
   const currentTask = ref<EvalTask | null>(null)
+  // Store results by run_id to support switching between runs while evaluation is running
+  const resultsByRunId = ref<Record<string, EvalResult[]>>({})
+  // Current displayed results (updated when switching runs or when new results arrive for current run)
   const evalResults = ref<EvalResult[]>([])
   const evalRuns = ref<EvalRun[]>([])
   const currentRun = ref<EvalRun | null>(null)
@@ -101,7 +104,10 @@ export const useEvalStore = defineStore('eval', () => {
       evalTasks.value = evalTasks.value.filter((t) => t.id !== id)
       if (currentTask.value?.id === id) {
         currentTask.value = null
-        evalResults.value = []
+        // Clear all results for this task's runs
+        evalRuns.value.forEach(run => {
+          delete resultsByRunId.value[run.id]
+        })
       }
     } catch (e) {
       error.value = e instanceof Error ? e.message : '删除评测任务失败'
@@ -115,7 +121,11 @@ export const useEvalStore = defineStore('eval', () => {
     loading.value = true
     error.value = null
     try {
-      evalResults.value = await evalApi.getEvalResults(taskId)
+      // Note: This function fetches results by task_id, not by run_id
+      const results = await evalApi.getEvalResults(taskId)
+      // Since this fetches by task_id (not run_id), we can't store it in resultsByRunId
+      // Just display the results directly
+      evalResults.value = results
     } catch (e) {
       error.value = e instanceof Error ? e.message : '加载评测结果失败'
     } finally {
@@ -140,6 +150,13 @@ export const useEvalStore = defineStore('eval', () => {
     error.value = null
     try {
       currentRun.value = await evalApi.getEvalRun(runId)
+      // Ensure the array exists
+      if (!resultsByRunId.value[runId]) {
+        resultsByRunId.value[runId] = []
+      }
+      // Use the same array reference so WebSocket updates are reflected
+      evalResults.value = resultsByRunId.value[runId]
+      console.log('[fetchEvalRun] runId:', runId, 'cached results count:', resultsByRunId.value[runId].length)
     } catch (e) {
       error.value = e instanceof Error ? e.message : '加载运行记录失败'
     } finally {
@@ -151,7 +168,10 @@ export const useEvalStore = defineStore('eval', () => {
     loading.value = true
     error.value = null
     try {
-      evalResults.value = await evalApi.getRunResults(runId)
+      const results = await evalApi.getRunResults(runId)
+      // Store results by run_id and update current display
+      resultsByRunId.value[runId] = results
+      evalResults.value = results
     } catch (e) {
       error.value = e instanceof Error ? e.message : '加载运行结果失败'
     } finally {
@@ -201,10 +221,14 @@ export const useEvalStore = defineStore('eval', () => {
             current: data.data.index || 0,
             total: data.data.total || 0,
           }
-          // Add result to list
+          // Store result by run_id, so results are accumulated even if user switches to another run
+          const runId = data.data.run_id
+          if (!resultsByRunId.value[runId]) {
+            resultsByRunId.value[runId] = []
+          }
           const result: EvalResult = {
             id: data.data.case_id,
-            run_id: currentRun.value?.id || '',
+            run_id: runId,
             task_id: taskId,
             case_id: data.data.case_id,
             case_uid: data.data.case_uid || null,
@@ -217,7 +241,13 @@ export const useEvalStore = defineStore('eval', () => {
             evaluator_tokens: data.data.evaluator_tokens || null,
             created_at: new Date().toISOString(),
           }
-          evalResults.value.push(result)
+          resultsByRunId.value[runId].push(result)
+          console.log('[WS] Result added for run:', runId, 'currentRun:', currentRun.value?.id, 'results count:', resultsByRunId.value[runId].length)
+          // If this is the currently selected run, update displayed results
+          if (runId === currentRun.value?.id) {
+            console.log('[WS] Updating evalResults for current run, count:', resultsByRunId.value[runId].length)
+            evalResults.value = [...resultsByRunId.value[runId]]
+          }
         } else if (data.type === 'complete') {
           isRunning.value = false
           progress.value = { current: progress.value.total, total: progress.value.total }

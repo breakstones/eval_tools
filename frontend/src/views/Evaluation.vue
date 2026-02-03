@@ -747,7 +747,11 @@ async function handleTaskChange(taskId: string) {
 async function selectRun(row: any) {
   selectedRunId.value = row.id
   await evalStore.fetchEvalRun(row.id)
-  await evalStore.fetchRunResults(row.id)
+  // Only fetch results from API if the run is not currently running
+  // For running runs, we want to use the in-memory accumulated results
+  if (row.status !== 'RUNNING' && row.status !== 'PENDING') {
+    await evalStore.fetchRunResults(row.id)
+  }
 }
 
 function showCreateTaskDialog() {

@@ -126,7 +126,7 @@
     <el-dialog
       v-model="caseDialogVisible"
       :title="editingCase ? '编辑测试用例' : '新建测试用例'"
-      width="600px"
+      width="800px"
     >
       <el-form :model="caseForm" label-width="100px">
         <el-form-item label="编号">
@@ -139,7 +139,7 @@
           <el-input
             v-model="caseForm.user_input"
             type="textarea"
-            :rows="4"
+            class="case-textarea"
             placeholder="请输入用户输入"
           />
         </el-form-item>
@@ -147,7 +147,7 @@
           <el-input
             v-model="caseForm.expected_output"
             type="textarea"
-            :rows="4"
+            class="case-textarea"
             placeholder="请输入预期输出"
           />
         </el-form-item>
@@ -434,5 +434,10 @@ async function handleExport(row: CaseSet) {
 
 .case-sets-table :deep(.el-table__row:hover) {
   background-color: #f5f7fa;
+}
+
+.case-textarea :deep(.el-textarea__inner) {
+  height: 400px !important;
+  min-height: 400px !important;
 }
 </style>
