@@ -593,10 +593,13 @@ class EvalService:
                 evaluator_logs = []
                 is_passed = False
 
+                # Initialize formatted outputs (handle execution error case)
+                formatted_expected = format_json_if_valid(case.expected_output or "")
+                formatted_actual = format_json_if_valid(actual_output or "")
+
                 if actual_output is not None:
                     # Format JSON outputs for better comparison
-                    formatted_expected = format_json_if_valid(case.expected_output or "")
-                    formatted_actual = format_json_if_valid(actual_output)
+                    # (already done above, but keeping this logic for clarity)
 
                     # Run all evaluators (any fail means overall fail)
                     is_passed = True

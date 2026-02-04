@@ -149,14 +149,16 @@ export const useEvalStore = defineStore('eval', () => {
     loading.value = true
     error.value = null
     try {
-      currentRun.value = await evalApi.getEvalRun(runId)
+      const run = await evalApi.getEvalRun(runId)
+      console.log('[fetchEvalRun] Fetched run:', runId, 'status:', run.status, 'summary:', run.summary)
+      currentRun.value = run
       // Ensure the array exists
       if (!resultsByRunId.value[runId]) {
         resultsByRunId.value[runId] = []
       }
-      // Use the same array reference so WebSocket updates are reflected
-      evalResults.value = resultsByRunId.value[runId]
-      console.log('[fetchEvalRun] runId:', runId, 'cached results count:', resultsByRunId.value[runId].length)
+      // Use spread to trigger reactivity
+      evalResults.value = [...resultsByRunId.value[runId]]
+      console.log('[fetchEvalRun] runId:', runId, 'status:', run.status, 'cached results count:', resultsByRunId.value[runId].length)
     } catch (e) {
       error.value = e instanceof Error ? e.message : '加载运行记录失败'
     } finally {
@@ -184,6 +186,8 @@ export const useEvalStore = defineStore('eval', () => {
     progress.value = { current: 0, total: 0 }
 
     let wsStarted = false
+    // Track the current run ID for this evaluation
+    let currentRunId: string | null = null
 
     // First, connect to WebSocket
     const ws = evalApi.connectEvaluationWebSocket(
@@ -198,6 +202,7 @@ export const useEvalStore = defineStore('eval', () => {
             evalApi.startEvaluation(taskId).then((run) => {
               console.log('Evaluation started:', run)
               currentRun.value = run
+              currentRunId = run.id
               // Refresh runs list to get the new run
               fetchEvalRuns(taskId)
             }).catch((err) => {
@@ -208,13 +213,12 @@ export const useEvalStore = defineStore('eval', () => {
           }
         } else if (data.type === 'run_created') {
           console.log('Run created:', data.data)
-          // Refresh runs list and select the latest run
+          const runId = data.data.run_id
+          currentRunId = runId
+          // Refresh runs list and select the new run
           fetchEvalRuns(taskId).then(() => {
-            // After fetching runs, select the first one (latest, sorted by run_number desc)
-            if (evalRuns.value.length > 0) {
-              fetchEvalRun(evalRuns.value[0].id)
-              fetchRunResults(evalRuns.value[0].id)
-            }
+            // Fetch the new run's full info (including status)
+            fetchEvalRun(runId)
           })
         } else if (data.type === 'result') {
           progress.value = {
@@ -249,12 +253,20 @@ export const useEvalStore = defineStore('eval', () => {
             evalResults.value = [...resultsByRunId.value[runId]]
           }
         } else if (data.type === 'complete') {
+          console.log('[WS] Evaluation complete')
           isRunning.value = false
           progress.value = { current: progress.value.total, total: progress.value.total }
+          // Use the tracked run ID to refresh the run status
+          if (currentRunId) {
+            console.log('[WS] Refreshing current run after complete, runId:', currentRunId)
+            // First refresh runs list to get updated status
+            fetchEvalRuns(taskId).then(() => {
+              // Then fetch the complete run info (including status and summary)
+              fetchEvalRun(currentRunId)
+            })
+          }
           // Refresh task to get summary
           fetchEvalTask(taskId)
-          // Refresh runs list
-          fetchEvalRuns(taskId)
         } else if (data.type === 'error') {
           isRunning.value = false
           error.value = data.data.error || '评测过程中发生错误'

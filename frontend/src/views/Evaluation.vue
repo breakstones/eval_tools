@@ -241,7 +241,19 @@
             <div class="results-section" v-if="selectedRunId">
               <div class="results-header">
                 <span class="section-title">评测结果</span>
-                <el-checkbox v-model="showFailedOnly" label="仅查看不通过" size="small" />
+                <div class="header-actions">
+                  <el-checkbox v-model="showFailedOnly" label="仅查看不通过" size="small" />
+                  <el-button
+                    type="primary"
+                    size="small"
+                    @click="handleExportResults"
+                    :loading="exporting"
+                    :disabled="!evalStore.currentRun || evalStore.currentRun.status !== 'COMPLETED'"
+                  >
+                    <el-icon><Download /></el-icon>
+                    导出
+                  </el-button>
+                </div>
               </div>
               <div v-if="evalStore.currentRun && evalStore.currentRun.status === 'COMPLETED'" class="summary-bar">
                 <el-statistic title="总用例数" :value="evalStore.currentRun.summary?.total || 0" />
@@ -478,11 +490,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Clock, CircleCheck, CircleClose } from '@element-plus/icons-vue'
+import { Plus, Clock, CircleCheck, CircleClose, Download } from '@element-plus/icons-vue'
 import { useEvalStore } from '@/stores/eval'
 import { useCasesStore } from '@/stores/cases'
 import { useEvaluatorStore } from '@/stores/evaluator'
 import { getModels } from '@/api/models'
+import { evalApi } from '@/api/eval'
 import DiffViewer from '@/components/DiffViewer.vue'
 import type { EvalTask, EvalResult } from '@/types/eval'
 import type { TestCase } from '@/types/cases'
@@ -536,6 +549,7 @@ const currentCaseSet = ref<any>(null)
 
 // Filter state
 const showFailedOnly = ref(false)
+const exporting = ref(false)
 
 // Form data
 const taskForm = ref({
@@ -1018,6 +1032,41 @@ async function saveEvaluatorsToTask() {
     ElMessage.error(error.message || '保存评估器配置失败')
   }
 }
+
+// Export results to Excel
+async function handleExportResults() {
+  if (!selectedRunId.value) {
+    ElMessage.warning('请先选择运行记录')
+    return
+  }
+
+  exporting.value = true
+  try {
+    const blob = await evalApi.exportRunResults(selectedRunId.value, showFailedOnly.value)
+
+    // 创建下载链接
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+
+    // 生成文件名
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19)
+    const suffix = showFailedOnly.value ? '_failed_only' : ''
+    link.download = `eval_results_${timestamp}${suffix}.xlsx`
+
+    // 触发下载
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+
+    ElMessage.success('导出成功')
+  } catch (error: any) {
+    ElMessage.error(error.message || '导出失败')
+  } finally {
+    exporting.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -1397,6 +1446,12 @@ async function saveEvaluatorsToTask() {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .summary-bar {

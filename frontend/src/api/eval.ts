@@ -89,4 +89,12 @@ export const evalApi = {
 
     return ws
   },
+
+  // 导出评测结果为 Excel
+  exportRunResults: (runId: string, failedOnly = false) => {
+    return api.get(`/eval/runs/${runId}/export`, {
+      params: { failed_only: failedOnly },
+      responseType: 'blob',
+    }).then((res) => res.data)
+  },
 }

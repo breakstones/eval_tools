@@ -512,3 +512,129 @@ async def get_run_results(
     ]
 
 
+@router.get("/runs/{run_id}/export")
+async def export_run_results(
+    run_id: str,
+    failed_only: bool = Query(False, description="仅导出不通过的结果"),
+    service: EvalService = Depends(get_eval_service),
+):
+    """导出评测结果为 Excel 文件."""
+    import pandas as pd
+    import openpyxl
+    from io import BytesIO
+    from datetime import datetime
+
+    # 获取评测结果
+    results = await service.get_run_results(run_id)
+
+    # 如果需要仅不通过的，进行过滤
+    if failed_only:
+        results = [(r, c) for r, c in results if not r.is_passed or r.execution_error]
+
+    # 先收集所有评估器名称，确定列结构
+    all_evaluator_names = set()
+    for result, case in results:
+        evaluator_logs = result.evaluator_logs_list
+        for log in evaluator_logs:
+            all_evaluator_names.add(log.get("evaluator", ""))
+
+    # 排序评估器名称以确保列顺序一致
+    evaluator_names = sorted([name for name in all_evaluator_names if name])
+    max_evaluators = len(evaluator_names)
+
+    # 如果没有评估器，使用默认列
+    if max_evaluators == 0:
+        max_evaluators = 1
+
+    # 构建 Excel 数据 - 每个用例占一行，评估器按列展示
+    excel_data = []
+    for result, case in results:
+        row_data = {
+            "用例编号": case.case_uid or "",
+            "用例用户输入": case.user_input or "",
+            "用例预期输出": case.expected_output or "",
+            "实际输出": result.actual_output or "",
+            "评测结果": "通过" if result.is_passed else "不通过",
+            "评测耗时(ms)": result.execution_duration if result.execution_duration is not None else "",
+            "技能tokens": result.skill_tokens if result.skill_tokens is not None else "",
+            "评估器tokens": result.evaluator_tokens if result.evaluator_tokens is not None else "",
+        }
+
+        # 为每个评估器添加列
+        evaluator_logs = result.evaluator_logs_list
+        evaluator_dict = {log.get("evaluator", ""): log for log in evaluator_logs}
+
+        for idx, eval_name in enumerate(evaluator_names):
+            log = evaluator_dict.get(eval_name, {})
+            row_data[f"评估器{idx+1}名称"] = eval_name
+            row_data[f"评估器{idx+1}结果"] = "通过" if log.get("passed", False) else "不通过"
+            row_data[f"评估器{idx+1}原因"] = log.get("reason", "")
+
+        excel_data.append(row_data)
+
+    # 创建 DataFrame
+    df = pd.DataFrame(excel_data)
+
+    # 调整列顺序：基础列在前，评估器列在后
+    base_columns = ["用例编号", "用例用户输入", "用例预期输出", "实际输出", "评测结果"]
+    metric_columns = ["评测耗时(ms)", "技能tokens", "评估器tokens"]
+    evaluator_columns = []
+    for idx in range(max_evaluators):
+        evaluator_columns.extend([f"评估器{idx+1}名称", f"评估器{idx+1}结果", f"评估器{idx+1}原因"])
+
+    column_order = base_columns + evaluator_columns + metric_columns
+    df = df[column_order]
+
+    # 创建 Excel 文件
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='评测结果')
+
+        # 获取工作表并设置列宽
+        worksheet = writer.sheets['评测结果']
+
+        # 动态设置列宽
+        column_widths = {}
+        for idx, col in enumerate(df.columns, start=1):
+            col_letter = openpyxl.utils.get_column_letter(idx)
+            if "编号" in col or "结果" in col and "耗时" not in col:
+                column_widths[col_letter] = 15
+            elif "输入" in col or "输出" in col or "原因" in col:
+                column_widths[col_letter] = 30
+            elif "耗时" in col or "tokens" in col:
+                column_widths[col_letter] = 15
+            else:
+                column_widths[col_letter] = 20
+
+        for col, width in column_widths.items():
+            worksheet.column_dimensions[col].width = width
+
+        # 设置所有单元格样式：垂直居中、水平左对齐
+        for row in worksheet.iter_rows():
+            for cell in row:
+                cell.alignment = openpyxl.styles.Alignment(
+                    horizontal='left',
+                    vertical='center',
+                    wrap_text=True
+                )
+
+        # 设置默认行高为36
+        for row in worksheet.iter_rows(min_row=2):  # 从第2行开始（跳过标题行）
+            worksheet.row_dimensions[row[0].row].height = 36
+
+    output.seek(0)
+
+    # 生成文件名（包含时间戳和run_id以确保唯一性）
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"eval_results_{timestamp}_run{run_id[:8]}.xlsx"
+
+    from fastapi.responses import Response
+    return Response(
+        content=output.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
+
+
