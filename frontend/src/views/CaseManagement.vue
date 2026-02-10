@@ -26,10 +26,13 @@
           >
             <el-table-column prop="name" label="名称" />
             <el-table-column prop="case_count" label="用例数" width="80" align="center" />
-            <el-table-column width="160" align="right">
+            <el-table-column width="200" align="right">
               <template #default="{ row }">
                 <el-button link type="primary" size="small" @click.stop="handleEditSet(row)">
                   编辑
+                </el-button>
+                <el-button link type="primary" size="small" @click.stop="handleDuplicateSet(row)">
+                  复制
                 </el-button>
                 <el-button link type="primary" size="small" @click.stop="handleExport(row)">
                   <el-icon><Download /></el-icon>
@@ -362,6 +365,15 @@ async function handleExport(row: CaseSet) {
     ElMessage.success('导出成功')
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : '导出失败')
+  }
+}
+
+async function handleDuplicateSet(row: CaseSet) {
+  try {
+    await casesStore.duplicateCaseSet(row.id)
+    ElMessage.success('复制成功')
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '复制失败')
   }
 }
 </script>

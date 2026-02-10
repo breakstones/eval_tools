@@ -104,6 +104,30 @@ async def delete_case_set(
         raise HTTPException(status_code=404, detail="用例集不存在")
 
 
+@router.post("/sets/{case_set_id}/duplicate", response_model=CaseSetResponse)
+async def duplicate_case_set(
+    case_set_id: str,
+    service: CaseService = Depends(get_case_service),
+) -> CaseSetResponse:
+    """Duplicate a case set and all its test cases."""
+    # Get original case set to construct new name
+    original = await service.get_case_set(case_set_id)
+    if original is None:
+        raise HTTPException(status_code=404, detail="用例集不存在")
+
+    # Duplicate with new name
+    duplicated = await service.duplicate_case_set(case_set_id, f"{original.name}复制")
+    if duplicated is None:
+        raise HTTPException(status_code=404, detail="用例集不存在")
+    count = await service.get_case_count(duplicated.id)
+    return CaseSetResponse(
+        id=duplicated.id,
+        name=duplicated.name,
+        created_at=duplicated.created_at,
+        case_count=count,
+    )
+
+
 @router.get("/sets/{case_set_id}/export")
 async def export_case_set(
     case_set_id: str,

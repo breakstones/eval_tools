@@ -31,6 +31,9 @@ export const casesApi = {
       responseType: 'blob',
     }).then((res) => res.data),
 
+  duplicateCaseSet: (id: string) =>
+    api.post<CaseSet>(`/cases/sets/${id}/duplicate`).then((res) => res.data),
+
   importExcel: (file: File, setId?: string) => {
     const formData = new FormData()
     formData.append('file', file)

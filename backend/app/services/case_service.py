@@ -310,3 +310,43 @@ class CaseService:
                 result_cases.append(new_case)
 
         return result_cases
+
+    async def duplicate_case_set(self, case_set_id: str, new_name: str) -> Optional[CaseSet]:
+        """Duplicate a case set and all its test cases.
+
+        Args:
+            case_set_id: Source case set ID
+            new_name: Name for the duplicated case set
+
+        Returns:
+            Created case set with duplicated test cases, or None if source not found
+        """
+        # Get source case set
+        source_set = await self.get_case_set(case_set_id)
+        if source_set is None:
+            return None
+
+        # Get source test cases
+        source_cases = await self.get_test_cases(case_set_id)
+
+        # Create new case set
+        new_set = CaseSet(name=new_name)
+        self.session.add(new_set)
+        await self.session.flush()
+        await self.session.refresh(new_set)
+
+        # Duplicate all test cases
+        for source_case in source_cases:
+            new_case = TestCase(
+                set_id=new_set.id,
+                case_uid=source_case.case_uid,
+                description=source_case.description,
+                user_input=source_case.user_input,
+                expected_output=source_case.expected_output,
+            )
+            self.session.add(new_case)
+
+        await self.session.flush()
+        await self.session.refresh(new_set)
+
+        return new_set

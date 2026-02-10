@@ -189,6 +189,21 @@ export const useCasesStore = defineStore('cases', () => {
     }
   }
 
+  async function duplicateCaseSet(id: string) {
+    loading.value = true
+    error.value = null
+    try {
+      const duplicated = await casesApi.duplicateCaseSet(id)
+      caseSets.value.unshift(duplicated)
+      return duplicated
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : '复制用例集失败'
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     // State
     caseSets,
@@ -210,5 +225,6 @@ export const useCasesStore = defineStore('cases', () => {
     deleteTestCase,
     importExcel,
     exportExcel,
+    duplicateCaseSet,
   }
 })

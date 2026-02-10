@@ -305,18 +305,8 @@ class ExcelService:
         # Get test cases
         test_cases = await self.case_service.get_test_cases(case_set_id)
 
-        # Create DataFrame
-        # First row: case set info
-        data = [
-            {
-                "用例编号": "",
-                "用例描述": "",
-                "用户输入": case_set.name,
-                "预期输出": "",
-            }
-        ]
-
-        # Test case rows
+        # Create DataFrame with test cases only (no case set info row)
+        data = []
         for tc in test_cases:
             data.append(
                 {
