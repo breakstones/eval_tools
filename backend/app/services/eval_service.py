@@ -137,6 +137,7 @@ class EvalService:
                         llm_client = LlmClient(
                             base_url=provider.base_url,
                             api_key=provider.api_key,
+                            endpoint=model.endpoint,
                         )
                         llm_client.model_code = model.model_code
                         evaluators.append((LlmJudgeEvaluator(config, llm_client), llm_client, display_name))
@@ -641,27 +642,39 @@ class EvalService:
                                         response = None
 
                                     import json
+                                    import sys
                                     from app.utils.json_repair import JsonRepair
                                     try:
-                                        result_data = json.loads(response)
-                                        result_value = result_data.get("result", "failed").lower()
-                                        eval_log = result_data.get("reason", "")
-                                        eval_passed = result_value == "passed"
-                                    except json.JSONDecodeError:
+                                        if response is None:
+                                            eval_passed = False
+                                            eval_log = "LLM 调用失败：未收到响应"
+                                            print(f"[ERROR] LLM评估器调用失败: 未收到响应", file=sys.stderr)
+                                        else:
+                                            result_data = json.loads(response)
+                                            result_value = result_data.get("result", "failed").lower()
+                                            eval_log = result_data.get("reason", "")
+                                            eval_passed = result_value == "passed"
+                                    except json.JSONDecodeError as json_err:
                                         # Try to repair JSON
                                         try:
+                                            print(f"[ERROR] LLM评估器返回无效JSON: {json_err}", file=sys.stderr)
+                                            print(f"[ERROR] 原始响应: {response[:500]}", file=sys.stderr)
                                             repaired = JsonRepair.repair(response)
                                             result_data = json.loads(repaired)
                                             result_value = result_data.get("result", "failed").lower()
                                             eval_log = result_data.get("reason", "")
                                             eval_passed = result_value == "passed"
                                             eval_log += " (JSON已自动修复)"
-                                        except Exception:
+                                        except Exception as repair_err:
                                             eval_passed = False
                                             eval_log = f"LLM返回无效JSON，修复失败: {response[:200]}"
+                                            print(f"[ERROR] JSON修复失败: {repair_err}", file=sys.stderr)
+                                            print(f"[ERROR] 原始响应: {response[:500]}", file=sys.stderr)
                                 except Exception as e:
                                     eval_passed = False
                                     eval_log = f"LLM调用失败: {str(e)}"
+                                    import sys
+                                    print(f"[ERROR] LLM评估器异常: {type(e).__name__}: {e}", file=sys.stderr)
                         else:
                             # Sync evaluator
                             eval_passed, eval_log = evaluator.evaluate(
@@ -943,6 +956,7 @@ class EvalService:
             llm_client = LlmClient(
                 base_url=provider.base_url,
                 api_key=provider.api_key,
+                endpoint="",  # 测试不需要特定 endpoint
             )
             actual_response = await llm_client.call_llm(rendered_request)
         except Exception as e:
@@ -1107,27 +1121,39 @@ class EvalService:
                             try:
                                 response = await eval_llm_client.call_llm(request)
                                 import json
+                                import sys
                                 from app.utils.json_repair import JsonRepair
                                 try:
-                                    result_data = json.loads(response)
-                                    result_value = result_data.get("result", "failed").lower()
-                                    eval_log = result_data.get("reason", "")
-                                    eval_passed = result_value == "passed"
-                                except json.JSONDecodeError:
+                                    if response is None:
+                                        eval_passed = False
+                                        eval_log = "LLM 调用失败：未收到响应"
+                                        print(f"[ERROR] LLM评估器调用失败: 未收到响应", file=sys.stderr)
+                                    else:
+                                        result_data = json.loads(response)
+                                        result_value = result_data.get("result", "failed").lower()
+                                        eval_log = result_data.get("reason", "")
+                                        eval_passed = result_value == "passed"
+                                except json.JSONDecodeError as json_err:
                                     # Try to repair JSON
                                     try:
+                                        print(f"[ERROR] LLM评估器返回无效JSON: {json_err}", file=sys.stderr)
+                                        print(f"[ERROR] 原始响应: {response[:500]}", file=sys.stderr)
                                         repaired = JsonRepair.repair(response)
                                         result_data = json.loads(repaired)
                                         result_value = result_data.get("result", "failed").lower()
                                         eval_log = result_data.get("reason", "")
                                         eval_passed = result_value == "passed"
                                         eval_log += " (JSON已自动修复)"
-                                    except Exception:
+                                    except Exception as repair_err:
                                         eval_passed = False
                                         eval_log = f"LLM返回无效JSON，修复失败: {response[:200]}"
+                                        print(f"[ERROR] JSON修复失败: {repair_err}", file=sys.stderr)
+                                        print(f"[ERROR] 原始响应: {response[:500]}", file=sys.stderr)
                             except Exception as e:
                                 eval_passed = False
                                 eval_log = f"LLM调用失败: {str(e)}"
+                                import sys
+                                print(f"[ERROR] LLM评估器异常: {type(e).__name__}: {e}", file=sys.stderr)
                     else:
                         # Sync evaluator
                         eval_passed, eval_log = evaluator.evaluate(

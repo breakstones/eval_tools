@@ -46,9 +46,13 @@
           class="models-table"
         >
           <el-table-column prop="display_name" label="显示名称" min-width="150" />
-          <el-table-column prop="model_code" label="模型代码" min-width="150" />
-          <el-table-column label="操作" width="80" align="center" fixed="right">
+          <el-table-column prop="model_code" label="模型代码" min-width="120" />
+          <el-table-column prop="endpoint" label="Endpoint" min-width="180" />
+          <el-table-column label="操作" width="180" align="center" fixed="right">
             <template #default="{ row }">
+              <el-button link type="primary" size="small" @click.stop="showEditModelDialog(row)">
+                编辑
+              </el-button>
               <el-button link type="danger" size="small" @click="confirmDeleteModel(row)">
                 删除
               </el-button>
@@ -104,6 +108,9 @@
         <el-form-item label="模型代码">
           <el-input v-model="modelForm.model_code" placeholder="例如: gpt-4" />
         </el-form-item>
+        <el-form-item label="Endpoint">
+          <el-input v-model="modelForm.endpoint" placeholder="默认为 /chat/completions，可自定义" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="modelDialogVisible = false">取消</el-button>
@@ -144,7 +151,8 @@ const providerForm = ref<ModelProviderCreate>({
 const modelForm = ref<ModelCreate>({
   provider_id: '',
   model_code: '',
-  display_name: ''
+  display_name: '',
+  endpoint: ''
 })
 
 // Load providers and their models
@@ -241,12 +249,13 @@ const showCreateModelDialog = (provider: ModelProvider) => {
   modelDialogVisible.value = true
 }
 
-const showEditModelDialog = (model: Model, provider: ModelProvider) => {
-  editingModel.value = model
+const showEditModelDialog = (row: Model) => {
+  editingModel.value = row
   modelForm.value = {
-    provider_id: provider.id,
-    model_code: model.model_code,
-    display_name: model.display_name
+    provider_id: row.provider_id,
+    model_code: row.model_code || '',
+    display_name: row.display_name || '',
+    endpoint: row.endpoint || ''
   }
   modelDialogVisible.value = true
 }

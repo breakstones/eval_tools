@@ -41,6 +41,12 @@ class Model(Base):
         String(200),
         nullable=False,
     )
+    endpoint: Mapped[str] = mapped_column(
+        String(200),
+        nullable=True,
+        default="/chat/completions",
+        comment="API endpoint path, empty for default /chat/completions",
+    )
     created_at: Mapped[datetime] = mapped_column(
         default=datetime.utcnow,
         nullable=False,
@@ -52,4 +58,4 @@ class Model(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<Model(id={self.id}, model_code={self.model_code}, display_name={self.display_name})>"
+        return f"<Model(id={self.id}, model_code={self.model_code}, display_name={self.display_name}, endpoint={self.endpoint})>"

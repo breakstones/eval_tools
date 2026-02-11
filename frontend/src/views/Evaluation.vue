@@ -440,7 +440,9 @@
       :skill-tokens="currentResult?.skill_tokens"
       :evaluator-tokens="currentResult?.evaluator_tokens"
       :case-uid="currentResult?.case_uid || currentCase?.case_uid || null"
+      :has-next="hasNextResult"
       @close="diffDialogVisible = false"
+      @next="handleNextResult"
     />
 
     <!-- Evaluator Selector Dialog -->
@@ -578,6 +580,12 @@ const filteredEvalResults = computed(() => {
     return evalStore.evalResults
   }
   return evalStore.evalResults.filter(result => !result.is_passed || result.execution_error)
+})
+
+const hasNextResult = computed(() => {
+  if (!currentResult.value) return false
+  const currentIndex = filteredEvalResults.value.findIndex(r => r.id === currentResult.value!.id)
+  return currentIndex >= 0 && currentIndex < filteredEvalResults.value.length - 1
 })
 
 const groupedModels = computed(() => {
@@ -981,6 +989,15 @@ function showResultDetail(row: EvalResult) {
   // Find the corresponding test case
   currentCase.value = testCases.value.find(tc => tc.id === row.case_id) || null
   diffDialogVisible.value = true
+}
+
+function handleNextResult() {
+  if (!currentResult.value) return
+  const currentIndex = filteredEvalResults.value.findIndex(r => r.id === currentResult.value!.id)
+  if (currentIndex >= 0 && currentIndex < filteredEvalResults.value.length - 1) {
+    const nextResult = filteredEvalResults.value[currentIndex + 1]
+    showResultDetail(nextResult)
+  }
 }
 
 // Evaluator functions

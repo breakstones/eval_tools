@@ -1,7 +1,6 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="dialogTitle"
     width="900px"
     :lock-scroll="true"
     :close-on-click-modal="true"
@@ -9,6 +8,20 @@
     align-center
     @close="$emit('close')"
   >
+    <template #header>
+      <div class="dialog-header">
+        <span class="dialog-title">{{ dialogTitle }}</span>
+        <el-button
+          type="primary"
+          size="small"
+          @click="$emit('next')"
+          :disabled="!hasNext"
+        >
+          <el-icon><Right /></el-icon>
+          下一个
+        </el-button>
+      </div>
+    </template>
     <div class="result-container">
       <!-- 1. 评测结果 -->
       <div class="result-header">
@@ -124,7 +137,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { DocumentCopy } from '@element-plus/icons-vue'
+import { DocumentCopy, Right } from '@element-plus/icons-vue'
 import { diff_match_patch, DIFF_DELETE, DIFF_INSERT, DIFF_EQUAL } from 'diff-match-patch'
 
 interface Props {
@@ -138,6 +151,7 @@ interface Props {
   skillTokens?: number | null
   evaluatorTokens?: number | null
   caseUid?: string | null
+  hasNext?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -146,6 +160,7 @@ const props = withDefaults(defineProps<Props>(), {
   skillTokens: null,
   evaluatorTokens: null,
   caseUid: null,
+  hasNext: false,
 })
 
 // 计算弹窗标题
@@ -155,6 +170,7 @@ const dialogTitle = computed(() => {
 
 const emit = defineEmits<{
   (e: 'close'): void
+  (e: 'next'): void
 }>()
 
 const expectedHtml = ref('')
@@ -525,5 +541,19 @@ watch(
 
 .output-content::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
+}
+
+/* Dialog Header */
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.dialog-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
 }
 </style>

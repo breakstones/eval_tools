@@ -53,6 +53,7 @@ export interface Model {
   provider_id: string
   model_code: string
   display_name: string
+  endpoint: string
   provider_name: string
   provider_base_url: string
   created_at: string
@@ -63,11 +64,13 @@ export interface ModelCreate {
   provider_id: string
   model_code: string
   display_name: string
+  endpoint?: string
 }
 
 export interface ModelUpdate {
   model_code?: string
   display_name?: string
+  endpoint?: string
 }
 
 export const getModels = async (providerId?: string) => {
